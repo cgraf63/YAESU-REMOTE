@@ -49,6 +49,12 @@ The box joins the home router or the phone hotspot. Setup in the browser: **WI-F
 
 On the Pi: `system/yaesu-remote.service` (systemd, user `yaesu`, imports `wifi.txt` as root before the start) and `system/50-yaesu-remote.rules` (polkit: user `yaesu` may manage NetworkManager, no sudo).
 
+## OLED status display (optional)
+
+A 0.96" I2C OLED (SSD1306, 128 × 64; 1.3" SH1106 works too) shows the radio with frequency and mode (model inverted while transmitting), the Wi-Fi network with signal, the IP address and a turning logo – as long as it turns, the Pi is running. Without Wi-Fi it shows the setup hotspot name.
+
+Wiring: VCC → pin 1 (3.3 V), GND → pin 6, SDA → pin 3, SCL → pin 5. `oled/yaesu_oled.py` uses the Python standard library only (I2C directly via `/dev/i2c-1`); service: `system/yaesu-remote-oled.service`. Preview without a display: `python3 oled/yaesu_oled.py --demo --png preview.png`.
+
 ## Test without a radio
 
 `tools/sim/yaesu_sim.py` simulates an FTX-1 or FTDX10 on a virtual serial port (Python 3, standard library only):
@@ -74,6 +80,7 @@ Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/t
 | `GET /api/wifi`, `…/saved`, `…/scan` | Wi-Fi status, saved networks, networks in range |
 | `POST /api/wifi/add`, `…/remove`, `…/order`, `…/connect` | manage networks, switch with fallback |
 | `GET/POST /api/wifi/ntfy`, `POST …/ntfy/test` | ntfy message with the address |
+| `GET /api/display` | everything the OLED shows (radio, frequency, Wi-Fi, IP) |
 | `WS /audio`, `WS /audio-tx` | RX / TX audio, 48 kHz, 16 bit, mono |
 
 ## Roadmap

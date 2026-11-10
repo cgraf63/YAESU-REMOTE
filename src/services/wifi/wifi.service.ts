@@ -114,6 +114,10 @@ export class WifiService {
     private available: boolean | null = null;
     private lastError = "";
 
+    /* nmcli is slow on the Zero: SSIDs per connection and the last status are kept */
+    private ssidCache = new Map<string, string>();
+    private lastStatus: { at: number; status: WifiStatus } | null = null;
+
     constructor(command = config.wifi.nmcli, iface = config.wifi.interface) {
         this.cmd = command;
         this.iface = iface;
@@ -183,7 +187,7 @@ export class WifiService {
         const port = config.http.port === 80 ? "" : `:${config.http.port}`;
         const host = os.hostname();
 
-        return {
+        const result: WifiStatus = {
             ...base,
             available: true,
             state,
@@ -194,6 +198,17 @@ export class WifiService {
             urls: ip ? [`http://${host}.local${port}/`, `http://${ip}${port}/`] : [`http://${host}.local${port}/`]
         };
 
+        this.lastStatus = { at: Date.now(), status: result };
+        return result;
+
+    }
+
+    /* status not older than maxAgeMs (display, frequent polling) */
+    async cachedStatus(maxAgeMs = 5000): Promise<WifiStatus> {
+        if (this.lastStatus && Date.now() - this.lastStatus.at < maxAgeMs) {
+            return { ...this.lastStatus.status, switching: this.switching, lastSwitch: this.lastSwitch };
+        }
+        return this.status();
     }
 
 
@@ -209,11 +224,15 @@ export class WifiService {
         const list: SavedNetwork[] = [];
 
         for (const [name = "", uuid = "", , priority = "0", active = ""] of wifi) {
-            let ssid = name;
-            try {
-                ssid = (await this.run(["-g", "802-11-wireless.ssid", "connection", "show", "uuid", uuid])).trim() || name;
+            let ssid = this.ssidCache.get(uuid) ?? "";
+            if (!ssid) {
+                try {
+                    ssid = (await this.run(["-g", "802-11-wireless.ssid", "connection", "show", "uuid", uuid])).trim();
+                    if (ssid) this.ssidCache.set(uuid, ssid);
+                }
+                catch { /* keep the name */ }
             }
-            catch { /* keep the name */ }
+            ssid ||= name;
             list.push({ uuid, name, ssid, priority: Number(priority) || 0, active: active === "yes", setup: name === SETUP_NAME });
         }
 
@@ -295,6 +314,8 @@ export class WifiService {
         if (!net) throw new Error("Unknown network");
         if (net.setup) throw new Error("The setup network cannot be deleted - it is the way back in");
         await this.run(["connection", "delete", "uuid", uuid]);
+        this.ssidCache.delete(uuid);
+        this.lastStatus = null;
     }
 
     /* new order (uuids, best first): priorities 100, 90, 80, ... */

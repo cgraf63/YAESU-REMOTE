@@ -1,0 +1,28 @@
+# /etc/systemd/system/yaesu-remote-oled.service
+#
+# Small I2C OLED (0.96" SSD1306 or 1.3" SH1106, address 0x3C): radio,
+# Wi-Fi network, IP and a turning logo (= the Pi is running).
+# Needs I2C on (raspi-config nonint do_i2c 0). Without a display the
+# script waits quietly and checks again every 10 s.
+#
+# 1.3" module: Environment=OLED_DRIVER=sh1106
+# mounted upside down: Environment=OLED_FLIP=1
+
+[Unit]
+Description=YAESU-REMOTE OLED status display
+After=yaesu-remote.service
+
+[Service]
+Type=simple
+User=yaesu
+Group=yaesu
+SupplementaryGroups=i2c
+Environment=YAESU_URL=http://127.0.0.1
+Environment=OLED_DRIVER=ssd1306
+Environment=OLED_CONTRAST=128
+ExecStart=/usr/bin/python3 /opt/yaesu-remote/oled/yaesu_oled.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

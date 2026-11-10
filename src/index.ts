@@ -2,6 +2,7 @@ import http from "node:http";
 
 import { config } from "./config.js";
 import { Router, sendJson, serveStatic } from "./http/server.js";
+import { displayRoutes } from "./routes/display.js";
 import { radioRoutes } from "./routes/radio.js";
 import { wifiRoutes } from "./routes/wifi.js";
 import { startAudioWebSocket } from "./services/audio/audio-ws.service.js";
@@ -23,6 +24,7 @@ const wifi = new WifiService();
 const router = new Router();
 radioRoutes(router);
 wifiRoutes(router, wifi);
+displayRoutes(router, wifi);
 
 const server = http.createServer((req, res) => {
 
