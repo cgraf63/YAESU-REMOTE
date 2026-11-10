@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import { config } from "../../config.js";
 import { detect, type Detected } from "./detect.js";
 import { Ftx1Service } from "./ftx-1.service.js";
@@ -141,7 +143,7 @@ class RadioManager {
                 return;
             }
 
-            console.log(`RADIO: ${found.model} found on ${found.device} @ ${found.baudRate}`);
+            console.log(`RADIO: ${found.model} found on ${found.device}${realName(found.device)} @ ${found.baudRate}`);
 
             this.found = found;
             this.radio = found.model === "FTX-1"
@@ -170,3 +172,14 @@ class RadioManager {
 }
 
 export const radioManager = new RadioManager();
+
+/* " (/dev/ttyUSB0)" for a /dev/serial/by-id name */
+function realName(device: string): string {
+    try {
+        const real = fs.realpathSync(device);
+        return real !== device ? ` (${real})` : "";
+    }
+    catch {
+        return "";
+    }
+}

@@ -186,7 +186,9 @@ export class YaesuHfService extends SerialRadioBase implements YaesuRadio {
             rtscts: false,
             pollIntervalMs: 700,
             rxTimeoutMs: 15000,
-            expectedId: info.id
+            expectedId: info.id,
+            // USB drops: the by-id name comes back within a second or two
+            reconnectDelayMs: 2000
         });
         this.model = info.name;
     }

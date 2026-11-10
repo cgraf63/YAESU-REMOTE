@@ -50,8 +50,24 @@ export function candidates(): string[] {
 
     if (byId.length) {
         // CP2105: if00 = CAT. Other adapters (one port each): all of them.
-        const cat = byId.filter(p => /if00/.test(p) || !/-if0[1-9]/.test(p));
-        return [...new Set(cat.map(p => fs.realpathSync(p)))];
+        // The by-id name is kept (not /dev/ttyUSBn): when the USB link drops
+        // and comes back as ttyUSB(n+1), the same name points to the new node.
+        // Yaesu CP2105 (the CAT bridge of the radios) first.
+        const cat = byId
+            .filter(p => /if00/.test(p) || !/-if0[1-9]/.test(p))
+            .sort((a, b) => Number(!/CP210/.test(a)) - Number(!/CP210/.test(b)));
+        const seen = new Set<string>();
+        return cat.filter(p => {
+            try {
+                const real = fs.realpathSync(p);
+                if (seen.has(real)) return false;
+                seen.add(real);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        });
     }
 
     return [

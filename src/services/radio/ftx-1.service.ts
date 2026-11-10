@@ -264,7 +264,9 @@ export class Ftx1Service extends SerialRadioBase implements YaesuRadio {
             rtscts: false,
             pollIntervalMs: 700,
             rxTimeoutMs: 15000,
-            expectedId: "0840"
+            expectedId: "0840",
+            // USB drops: the by-id name comes back within a second or two
+            reconnectDelayMs: 2000
         });
     }
 
