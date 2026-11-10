@@ -1,9 +1,15 @@
 /*
- * SHACK-SERVER - dedicated Yaesu FTX-1 remote (/ftx1)
+ * YAESU-REMOTE - remote page for FTX-1, FTDX10 and FT-710
  *
- * Controls the ACTIVE transceiver (selected in the dashboard) through
- * /api/ftx1. Display modelled on the FTX-1: MAIN and SUB stacked,
- * bar-graph meters, touch keys; tuning dial with steps.
+ * One page in the FTX-1 design for all radios. The server detects the
+ * transceiver and sends a profile (/api/radio/profile): bands, modes,
+ * attenuator / preamp / roofing choices, which panels exist. The page
+ * builds its keys from it:
+ *
+ *   FTX-1            MAIN / SUB (two receivers), 2 m / 70 cm, C4FM, memories
+ *   FTDX10 / FT-710  VFO A / B (one receiver), HF + 6 m, 5 - 100 W
+ *
+ * Display: two VFOs stacked, bar-graph meters, touch keys, tuning dial.
  */
 
 (function () {
@@ -16,36 +22,22 @@
        Tables
        ------------------------------------------------------------ */
 
-    const BANDS = [
-        ["00", "160 m"], ["01", "80 m"], ["02", "60 m"], ["03", "40 m"], ["04", "30 m"],
-        ["05", "20 m"], ["06", "17 m"], ["07", "15 m"], ["08", "12 m"], ["09", "10 m"],
-        ["10", "6 m"], ["13", "2 m"], ["14", "70 cm"], ["12", "AIR"], ["11", "GEN"]
-    ];
-
-    const MODE_GROUPS = [
-        ["SSB", ["LSB", "USB"]],
-        ["CW", ["CW-U", "CW-L"]],
-        ["AM", ["AM", "AM-N"]],
-        ["FM", ["FM", "FM-N"]],
-        ["C4FM DIGITAL", ["C4FM-DN", "C4FM-VW"]],
-        ["DATA", ["DATA-U", "DATA-L", "DATA-FM", "DATA-FM-N"]],
-        ["RTTY / PSK", ["RTTY-U", "RTTY-L", "PSK"]]
-    ];
-
     /* SH width codes (CAT manual table 5) */
     const WIDTH_SSB = [0, 300, 400, 600, 850, 1100, 1200, 1500, 1650, 1800, 1950, 2100, 2250, 2400, 2450, 2500, 2600, 2700, 2800, 2900, 3000, 3200, 3500, 4000];
     const WIDTH_NARROW = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 600, 800, 1200, 1400, 1700, 2000, 2400, 3000, 3200, 3500, 4000];
 
-    const AGC = [["OFF", 0], ["FAST", 1], ["MID", 2], ["SLOW", 3], ["AUTO", 4]];
     const SHIFT = [["SIMP", 0], ["+", 1], ["−", 2], ["ARS", 3]];
     const TONE = [["OFF", 0], ["ENC", 1], ["TSQ", 2], ["DCS", 3]];
     const STEPS = [10, 100, 500, 1000, 5000, 12500, 25000];
 
     let state = null;
-    let tables = null;
-    let side = "MAIN";           // side the controls act on
-    let step = Number(localGet("ftx1-step")) || 100;
-    let pane = localGet("ftx1-pane") || "band";
+    let profile = null;          // what the connected radio can do
+    let side = "MAIN";           // side the controls act on (MAIN = VFO A, SUB = VFO B)
+    let step = Number(localGet("yr-step")) || 100;
+    let pane = localGet("yr-pane") || "band";
+
+    const dual = () => profile?.dualReceiver !== false;
+    const sideName = s => profile ? (s === "SUB" ? profile.sides.sub.name : profile.sides.main.name) : s;
 
     function localGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
     function localSet(key, value) { try { localStorage.setItem(key, value); } catch { /* ignore */ } }
@@ -66,7 +58,7 @@
 
     async function control(name, value) {
         try {
-            const response = await fetch("/api/ftx1/control", {
+            const response = await fetch("/api/radio/control", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ control: name, value })
@@ -83,9 +75,10 @@
         }
     }
 
-    /* controls that belong to one receiver: select it first */
+    /* FTX-1: controls that belong to one receiver - select it first.
+       FTDX10 / FT-710: one receiver, the controls never switch the VFO. */
     async function sideControl(name, value) {
-        if (state && state.activeSide !== side) await control("side", side);
+        if (dual() && state && state.activeSide !== side) await control("side", side);
         return control(name, value);
     }
 
@@ -181,10 +174,19 @@
         $("vfo-main").classList.toggle("active", side === "MAIN");
         $("vfo-sub").classList.toggle("active", side === "SUB");
 
-        // TX side: split = SUB transmits
+        // TX side: split = the other side transmits
         const txSub = state.txSide === "SUB";
         $("vfo-main").classList.toggle("txside", !txSub);
         $("vfo-sub").classList.toggle("txside", txSub);
+
+        // role tags: FTX-1 TRX (red) / RX (green); one receiver: TRX, or RX + TX in split
+        const activeSub = state.activeSide === "SUB";
+        let roles;
+        if (dual()) roles = txSub ? ["RX", "TRX"] : ["TRX", "RX"];
+        else if (!state.split) roles = activeSub ? ["", "TRX"] : ["TRX", ""];
+        else roles = activeSub ? ["TX", "RX"] : ["RX", "TX"];
+        setRole("m-tag", roles[0]);
+        setRole("s-tag", roles[1]);
 
         lightBar("m-bar", state.tx && !txSub ? 0 : sSegments(m.smeter));
         lightBar("s-bar", state.tx && txSub ? 0 : sSegments(s.smeter));
@@ -203,7 +205,7 @@
         // status line
         ind("i-tx", true, state.tx ? "TX" : "RX", state.tx ? "red" : "");
         ind("i-split", state.split, "SPLIT", "orange");
-        ind("i-att", state.attenuator, "ATT");
+        ind("i-att", state.attenuator, state.attenuatorName && state.attenuator ? `ATT ${state.attenuatorName}` : "ATT");
         ind("i-pre", state.preamp !== "IPO" && state.preamp !== "PRE OFF", state.preamp, "blue");
         ind("i-agc", true, `AGC ${c.agc}`);
         ind("i-nar", c.narrow, "NAR");
@@ -214,18 +216,20 @@
         ind("i-cont", c.contour, "CONT", "blue");
         ind("i-tone", c.toneModeCode > 0, c.toneModeCode === 3 ? `DCS ${String(state.dcs).padStart(3, "0")}` : c.toneModeCode ? `${c.toneMode} ${state.ctcss.toFixed(1)}` : "TONE");
         ind("i-mem", c.memoryMode, c.memoryMode ? `MEM ${String(c.memoryChannel).padStart(2, "0")}` : "MEM", "mem-on");
+        $("i-mem").hidden = !profile?.memories;
         ind("i-head", true, state.head === "spa1" ? "SPA-1" : state.head === "field" ? "FIELD" : "—");
+        $("i-head").hidden = !profile?.showHead;
         ind("i-pwr", true, `${Number(state.power).toFixed(state.power < 10 && state.power % 1 ? 1 : 0)} W`);
 
         // header
-        $("radio-name").textContent = state.name || "REMOTE";
+        $("radio-model").textContent = state.model || profile?.model || "YAESU";
         $("pwr").classList.toggle("on", state.poweredOn);
         $("link").classList.toggle("ok", state.connected && state.alive);
         $("link-text").textContent = !state.connected ? "CAT CLOSED" : state.alive ? "CONNECTED" : "NO ANSWER";
 
         // side selector + names
         document.querySelectorAll(".sidesel button").forEach(b => b.classList.toggle("sel", b.dataset.side === side));
-        document.querySelectorAll(".side-name").forEach(el => { el.textContent = side; });
+        document.querySelectorAll(".side-name").forEach(el => { el.textContent = sideName(side); });
 
         // buttons on the right
         $("ptt").classList.toggle("on", state.tx);
@@ -249,6 +253,13 @@
         if (out && text !== undefined && !busy.has(id)) out.textContent = text;
     }
 
+    function setRole(id, role) {
+        const el = $(id);
+        el.dataset.role = role;
+        el.classList.toggle("role-rx", role === "RX");
+        el.classList.toggle("role-tx", role === "TX" || role === "TRX");
+    }
+
     function setToggle(id, on) {
         $(id).classList.toggle("on", Boolean(on));
     }
@@ -268,7 +279,7 @@
         const t = widthTable(c.mode);
 
         // band / mode highlight
-        document.querySelectorAll("#band-grid .k").forEach(b => b.classList.toggle("on", c.band.replace(" ", "") === b.textContent.replace(" ", "")));
+        document.querySelectorAll("#band-grid .k").forEach(b => b.classList.toggle("on", c.band.replace(/ /g, "") === b.textContent.replace(/ /g, "")));
         document.querySelectorAll("#mode-groups .k").forEach(b => b.classList.toggle("on", b.dataset.mode === c.mode));
 
         // filter
@@ -295,7 +306,9 @@
         setSlider("r-af", c.afGain, String(Math.round(c.afGain / 2.55)));
         setSlider("r-rf", c.rfGain, String(Math.round(c.rfGain / 2.55)));
         setSlider("r-sql", c.squelch, String(Math.round(c.squelch / 2.55)));
-        setToggle("r-att", state.attenuator);
+        const attCode = state.attenuatorCode ?? (state.attenuator ? 1 : 0);
+        $("att-row").querySelectorAll("[data-att]").forEach(b => b.classList.toggle("on", Number(b.dataset.att) === attCode));
+        $("roof-row").querySelectorAll("[data-roof]").forEach(b => b.classList.toggle("on", b.dataset.roof === state.roofingCode));
 
         const hf = state.preampGroup === "HF";
         $("pre-label").textContent = `PREAMP (${state.preampGroup})`;
@@ -348,35 +361,91 @@
             memScanRunning = scan.running;
         }
         $("mem-vfo").classList.toggle("on", !c.memoryMode);
+        $("t-tunestop").classList.toggle("on", Boolean(state.tuning));
         document.querySelectorAll(".mem").forEach(el => el.classList.toggle("cur", c.memoryMode && Number(el.dataset.ch) === c.memoryChannel));
 
     }
 
+    /* keys that do not depend on the radio */
     function buildPanes() {
 
-        $("band-grid").innerHTML = BANDS.map(([code, name]) =>
-            `<button class="k" type="button" data-band="${code}">${name}</button>`).join("");
-
-        $("mode-groups").innerHTML = MODE_GROUPS.map(([title, modes]) =>
-            `<div class="group"><label>${title}</label><div class="grid">${modes.map(mode =>
-                `<button class="k" type="button" data-mode="${mode}">${mode.replace("C4FM-", "C4FM ")}</button>`).join("")}</div></div>`).join("");
-
-        $("agc-row").innerHTML = AGC.map(([n, v]) => `<button class="k" type="button" data-agc="${v}">${n}</button>`).join("");
-        $("fm-shift").innerHTML = SHIFT.map(([n, v]) => `<button class="k" type="button" data-shift="${v}">${n}</button>`).join("");
         $("fm-tone").innerHTML = TONE.map(([n, v]) => `<button class="k" type="button" data-tone="${v}">${n}</button>`).join("");
-
-        $("cw-mems").innerHTML = [1, 2, 3, 4, 5].map(n =>
-            `<div class="cwmem"><button class="k amber" type="button" data-cw="${n}">M${n}</button><span id="cw-text-${n}">—</span></div>`).join("") +
-            `<div class="cwmem"><button class="k warn" type="button" data-cw="0">STOP</button><span>stop playback</span></div>`;
 
         $("steps").innerHTML = STEPS.map(s =>
             `<button type="button" data-step="${s}" class="${s === step ? "sel" : ""}">${s >= 1000 ? `${s / 1000} k` : s}</button>`).join("");
 
     }
 
+    const keys = (list, attr) => list.map(({ label, value }) => `<button class="k" type="button" data-${attr}="${esc(value)}">${esc(label)}</button>`).join("");
+
+    /* keys and panels of the connected radio */
+    function applyProfile() {
+
+        const p = profile;
+        const names = p.sides;
+
+        document.title = `${p.model} · YAESU-REMOTE`;
+        $("radio-model").textContent = p.model;
+
+        // MAIN / SUB or VFO A / VFO B
+        const tag = n => `${esc(n.name.replace(/\s+[AB]$/, "") || n.name)}<small>${esc(n.short)}</small>`;
+        $("m-tag").innerHTML = tag(names.main);
+        $("s-tag").innerHTML = tag(names.sub);
+        $("sel-main").textContent = names.main.name;
+        $("sel-sub").textContent = names.sub.name;
+        $("t-a2b").textContent = `${names.main.name} → ${names.sub.name}`;
+        $("t-b2a").textContent = `${names.sub.name} → ${names.main.name}`;
+
+        // one receiver: filter / DSP / RX panes belong to the receiver, not to a VFO
+        for (const [name, title] of [["filter", "FILTER"], ["dsp", "DSP"], ["rx", "RECEIVER"]]) {
+            const h2 = document.querySelector(`.pane[data-pane="${name}"] h2`);
+            h2.innerHTML = dual() ? `${title} · <b class="side-name">${esc(sideName(side))}</b>` : title;
+        }
+
+        $("band-grid").innerHTML = keys(p.bands, "band");
+
+        $("mode-groups").innerHTML = p.modeGroups.map(([title, modes]) =>
+            `<div class="group"><label>${esc(title)}</label><div class="grid">${modes.map(mode =>
+                `<button class="k" type="button" data-mode="${esc(mode)}">${esc(mode.replace("C4FM-", "C4FM "))}</button>`).join("")}</div></div>`).join("");
+
+        $("att-row").innerHTML = keys(p.attenuator, "att");
+        $("agc-row").innerHTML = p.agc.map(({ label, value }) => `<button class="k" type="button" data-agc="${value}">${esc(label)}</button>`).join("");
+        $("roof-group").hidden = !p.roofing;
+        $("roof-row").innerHTML = p.roofing ? keys(p.roofing, "roof") : "";
+        $("pre-row").dataset.kind = "";
+
+        $("d-dnrl").max = String(p.dnrMax);
+        $("d-nbl").max = String(p.nbMax);
+
+        $("fm-shift").innerHTML = SHIFT.filter(([n]) => dual() || n !== "ARS").map(([n, v]) => `<button class="k" type="button" data-shift="${v}">${n}</button>`).join("");
+
+        $("cw-mems").innerHTML = Array.from({ length: p.cw.memories }, (_, i) => i + 1).map(n =>
+            `<div class="cwmem"><button class="k amber" type="button" data-cw="${n}">M${n}</button><span id="cw-text-${n}">—</span></div>`).join("") +
+            (p.cw.stop ? `<div class="cwmem"><button class="k warn" type="button" data-cw="0">STOP</button><span>stop playback</span></div>` : "");
+
+        $("band-hint").textContent = p.hints.band;
+        $("tuner-hint").textContent = p.hints.tuner;
+        $("fm-hint").textContent = p.hints.fm;
+
+        // panels the radio does not have
+        $("key-fm").hidden = !p.fm;
+        $("key-mem").hidden = !p.memories;
+        for (const id of ["mem-qi", "mem-qr"]) $(id).hidden = !p.memories?.quickMemory;
+        $("mem-store-row").hidden = !p.memories?.store;
+        const visible = [...document.querySelectorAll("#softkeys button")].filter(b => !b.hidden).length;
+        $("softkeys").style.setProperty("--keys", String(visible));
+        if (!document.querySelector(`#softkeys button[data-pane="${pane}"]:not([hidden])`)) showPane("band");
+
+        $("fm-ctcss").innerHTML = p.ctcss.map((t, i) => `<option value="${i}">${t.toFixed(1)} Hz</option>`).join("");
+        $("fm-dcs").innerHTML = p.dcs.map((d, i) => `<option value="${i}">${String(d).padStart(3, "0")}</option>`).join("");
+
+        if (p.memories) void loadMemories();
+
+    }
+
     function showPane(name) {
         pane = name;
-        localSet("ftx1-pane", name);
+        localSet("yr-pane", name);
         document.querySelectorAll(".pane").forEach(p => p.classList.toggle("show", p.dataset.pane === name));
         document.querySelectorAll("#softkeys button").forEach(b => b.classList.toggle("sel", b.dataset.pane === name));
     }
@@ -398,7 +467,8 @@
         if (!base) return;
 
         tuning.side = side;
-        tuning.target = Math.max(30000, Math.min(470e6, Math.round(base / step) * step + steps * step));
+        const range = profile?.frequency || { min: 30000, max: 470e6 };
+        tuning.target = Math.max(range.min, Math.min(range.max, Math.round(base / step) * step + steps * step));
         tuning.holdUntil = now + 1200;
 
         $(side === "SUB" ? "s-freq" : "m-freq").innerHTML = freqHtml(tuning.target);
@@ -498,7 +568,10 @@
             const mhz = Number(String(input.value).replace(",", "."));
             el.innerHTML = freqHtml(freq);
             if (!ok) return;
-            if (!Number.isFinite(mhz) || mhz < 0.03 || mhz > 470) return toast("Frequency: 0.030 - 470 MHz");
+            const range = profile?.frequency || { min: 30000, max: 470e6 };
+            if (!Number.isFinite(mhz) || mhz * 1e6 < range.min || mhz * 1e6 > range.max) {
+                return toast(`Frequency: ${(range.min / 1e6).toFixed(3)} - ${range.max / 1e6} MHz`);
+            }
             await control(which === "SUB" ? "frequencyB" : "frequency", Math.round(mhz * 1e6));
         };
 
@@ -548,7 +621,7 @@
         // safety: never stay in TX when the page is left
         window.addEventListener("blur", () => { if (pttOn) void ptt(false); });
         window.addEventListener("pagehide", () => {
-            if (pttOn) navigator.sendBeacon?.("/api/ftx1/control", new Blob([JSON.stringify({ control: "ptt", value: false })], { type: "application/json" }));
+            if (pttOn) navigator.sendBeacon?.("/api/radio/control", new Blob([JSON.stringify({ control: "ptt", value: false })], { type: "application/json" }));
         });
 
     }
@@ -638,7 +711,8 @@
 
         try {
 
-            const response = await fetch("/api/ftx1/memories", { cache: "no-store" });
+            if (!profile?.memories) return;
+            const response = await fetch("/api/radio/memories", { cache: "no-store" });
             if (!response.ok) return;
 
             const data = await response.json();
@@ -677,12 +751,12 @@
                     <span class="ch">${String(m.channel).padStart(2, "0")}</span>
                     <span class="nm">${esc(m.name || "—")}<small>${mhz(m.frequency)} MHz · ${esc(m.mode)}${m.shift ? " · " + esc(m.shift) : ""}${m.tone ? " · " + esc(m.tone) : ""}</small></span>
                     <span class="acts">
-                        <button class="k" type="button" data-recall="MAIN" title="Recall on MAIN">MAIN</button>
-                        <button class="k" type="button" data-recall="SUB" title="Recall on SUB">SUB</button>
+                        <button class="k" type="button" data-recall="MAIN" title="Recall on ${esc(sideName("MAIN"))}">${esc(sideName("MAIN"))}</button>
+                        <button class="k" type="button" data-recall="SUB" title="Recall on ${esc(sideName("SUB"))}">${esc(sideName("SUB"))}</button>
                         <button class="k" type="button" data-rename title="Change name">✎</button>
                     </span>
                 </div>`).join("")
-            : `<p class="hint">${memories.length ? "No channel matches." : "Press READ CHANNELS to read the memory channels from the FTX-1 (about 10 seconds)."}</p>`;
+            : `<p class="hint">${memories.length ? "No channel matches." : `Press READ CHANNELS to read the memory channels from the ${esc(profile?.model || "radio")} (about 10 seconds).`}</p>`;
 
     }
 
@@ -713,7 +787,7 @@
         $("mem-store").disabled = true;
 
         try {
-            const response = await fetch("/api/ftx1/memories/store", {
+            const response = await fetch("/api/radio/memories/store", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ channel: ch, from: side, name })
@@ -742,7 +816,7 @@
         if (name === null) return;
 
         try {
-            const response = await fetch("/api/ftx1/memories/rename", {
+            const response = await fetch("/api/radio/memories/rename", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ channel: ch, name: name.toUpperCase().slice(0, 12) })
@@ -831,7 +905,7 @@
             const b = e.target.closest("[data-step]");
             if (!b) return;
             step = Number(b.dataset.step);
-            localSet("ftx1-step", String(step));
+            localSet("yr-step", String(step));
             document.querySelectorAll("#steps button").forEach(x => x.classList.toggle("sel", x === b));
         });
 
@@ -855,7 +929,7 @@
         on("pwr", "click", () => {
             if (!state) return;
             const off = state.poweredOn;
-            if (off && !confirm("Switch the FTX-1 off?")) return;
+            if (off && !confirm(`Switch the ${profile?.model || "transceiver"} off?`)) return;
             void control("powerSwitch", !off);
         });
 
@@ -881,7 +955,8 @@
         slider("r-af", v => String(Math.round(v / 2.55)), v => sideControl("afGain", v));
         slider("r-rf", v => String(Math.round(v / 2.55)), v => sideControl("rfGain", v));
         slider("r-sql", v => String(Math.round(v / 2.55)), v => sideControl("squelch", v));
-        on("r-att", "click", () => void control("att", !state?.attenuator));
+        on("att-row", "click", e => { const b = e.target.closest("[data-att]"); if (b) void control("att", Number(b.dataset.att)); });
+        on("roof-row", "click", e => { const b = e.target.closest("[data-roof]"); if (b) void control("roofing", b.dataset.roof); });
         on("pre-row", "click", e => { const b = e.target.closest("[data-pre]"); if (b) void sideControl("preamp", Number(b.dataset.pre)); });
         on("agc-row", "click", e => { const b = e.target.closest("[data-agc]"); if (b) void sideControl("agc", Number(b.dataset.agc)); });
 
@@ -912,13 +987,21 @@
 
     }
 
-    async function loadTables() {
+    let profileLoading = false;
+
+    async function loadProfile() {
+        if (profileLoading) return;
+        profileLoading = true;
         try {
-            tables = await (await fetch("/api/ftx1/tables")).json();
-            $("fm-ctcss").innerHTML = tables.ctcss.map((t, i) => `<option value="${i}">${t.toFixed(1)} Hz</option>`).join("");
-            $("fm-dcs").innerHTML = tables.dcs.map((d, i) => `<option value="${i}">${String(d).padStart(3, "0")}</option>`).join("");
+            const response = await fetch("/api/radio/profile", { cache: "no-store" });
+            if (!response.ok) return;
+            profile = await response.json();
+            applyProfile();
         }
-        catch { /* later */ }
+        catch { /* next poll */ }
+        finally {
+            profileLoading = false;
+        }
     }
 
     /* ------------------------------------------------------------
@@ -935,22 +1018,30 @@
 
         try {
 
-            const response = await fetch("/api/ftx1", { cache: "no-store" });
+            const response = await fetch("/api/radio", { cache: "no-store" });
             const data = await response.json().catch(() => ({}));
 
             if (response.status === 409) {
-                $("ov-title").textContent = "FTX-1 not active";
-                $("ov-text").textContent = data.activeRadio
-                    ? `The active transceiver is ${data.activeRadio.name}. Select the FTX-1 in the dashboard.`
-                    : "No transceiver is active. Select the FTX-1 in the dashboard.";
+                const st = data.status || {};
+                const unsupported = st.state === "unsupported";
+                $("ov-title").textContent = unsupported ? data.error : "Searching for the transceiver";
+                $("ov-text").textContent = unsupported
+                    ? "Supported: FTX-1 and FTDX10. FT-710 support follows."
+                    : `Connect the FTX-1, FTDX10 or FT-710 with the USB cable and switch it on.${st.message ? ` (${st.message})` : ""}`;
                 $("overlay").classList.add("show");
                 $("link").classList.remove("ok");
-                $("link-text").textContent = "NOT ACTIVE";
+                $("link-text").textContent = unsupported ? "NOT SUPPORTED" : "SEARCHING";
                 state = null;
                 return;
             }
 
             if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+
+            // other radio (or first contact): rebuild the keys
+            if (!profile || profile.model !== data.model) {
+                await loadProfile();
+                if (!profile || profile.model !== data.model) return;
+            }
 
             $("overlay").classList.remove("show");
 
@@ -988,9 +1079,7 @@
     setupPtt();
     setupMemories();
     clock();
-    void loadTables();
     void poll();
-    void loadMemories();
 
     setInterval(poll, 500);
     setInterval(clock, 1000);

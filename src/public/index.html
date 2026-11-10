@@ -6,8 +6,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0b0d10">
-    <title>SHACK-SERVER – FTX-1 Remote</title>
-    <link rel="icon" type="image/png" href="/assets/app/icon-192.png">
+    <title>YAESU-REMOTE</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
     <style>
 
@@ -44,6 +44,8 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 /* ---------------- top bar ---------------- */
+
+[hidden] { display: none !important; }
 
 .appbar {
     display: flex;
@@ -208,8 +210,16 @@ button { cursor: pointer; }
 }
 .vfo.sub.active::before { background: var(--sub); }
 /* TX side: red TRX, other side: green RX */
-.vfo .tag::after { content: "RX"; display: block; font-size: 10px; color: #04140a; background: var(--ok); border-radius: 3px; margin: 4px 6px 0; }
-.vfo.txside .tag::after { content: "TRX"; color: #fff; background: var(--tx); }
+/*
+ * role tag under MAIN / SUB (VFO A / B):
+ *   FTX-1 (two receivers): transmitting side red TRX, other side green RX
+ *   FTDX10 / FT-710 (one receiver): no split: active VFO red TRX, other nothing;
+ *   split: active VFO green RX, other VFO red TX
+ */
+.vfo .tag::after { content: attr(data-role); display: block; font-size: 10px; border-radius: 3px; margin: 4px 6px 0; }
+.vfo .tag[data-role=""]::after { display: none; }
+.vfo .tag.role-rx::after { color: #04140a; background: var(--ok); }
+.vfo .tag.role-tx::after { color: #fff; background: var(--tx); }
 
 /* bar meter (S / PO) */
 
@@ -253,7 +263,7 @@ button { cursor: pointer; }
 
 .softkeys {
     display: grid;
-    grid-template-columns: repeat(10, 1fr);
+    grid-template-columns: repeat(var(--keys, 10), 1fr);
     gap: 6px;
     margin-top: auto;
     padding-top: 10px;
@@ -519,9 +529,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
 <body>
 
 <header class="appbar">
-    <a class="back" href="/" title="Back to the dashboard">◀<span> Dashboard</span></a>
-    <img class="logo" src="/assets/shack-server-logo.svg" alt="">
-    <div class="title">FTX-1 <small id="radio-name">REMOTE</small></div>
+    <div class="title"><span id="radio-model">YAESU</span> <small id="radio-name">REMOTE</small></div>
     <span class="link-dot" id="link"><i></i><span id="link-text">CONNECTING</span></span>
     <div class="spacer"></div>
     <div class="clock" id="clock"></div>
@@ -555,7 +563,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
             </div>
 
             <div class="vfo main" id="vfo-main" data-side="MAIN">
-                <div class="tag">MAIN<small>A</small></div>
+                <div class="tag" id="m-tag" data-role="">MAIN<small>A</small></div>
                 <div class="line">
                     <span class="mode" id="m-mode">---</span>
                     <span class="band" id="m-band"></span>
@@ -569,7 +577,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
             </div>
 
             <div class="vfo sub" id="vfo-sub" data-side="SUB">
-                <div class="tag">SUB<small>B</small></div>
+                <div class="tag" id="s-tag" data-role="">SUB<small>B</small></div>
                 <div class="line">
                     <span class="mode" id="s-mode">---</span>
                     <span class="band" id="s-band"></span>
@@ -593,18 +601,17 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                 <button type="button" data-pane="filter">FILTER</button>
                 <button type="button" data-pane="dsp">DSP</button>
                 <button type="button" data-pane="rx">RX</button>
-                <button type="button" data-pane="fm">FM</button>
+                <button type="button" data-pane="fm" id="key-fm">FM</button>
                 <button type="button" data-pane="tx">TX</button>
                 <button type="button" data-pane="cw">CW</button>
-                <button type="button" data-pane="mem">MEM</button>
+                <button type="button" data-pane="mem" id="key-mem">MEM</button>
                 <button type="button" data-pane="audio">AUDIO</button>
             </div>
 
             <div class="overlay" id="overlay">
                 <div>
-                    <h3 id="ov-title">FTX-1 not active</h3>
-                    <p id="ov-text">Select the FTX-1 as transceiver in the dashboard.</p>
-                    <a href="/">Open the dashboard</a>
+                    <h3 id="ov-title">Searching for the transceiver</h3>
+                    <p id="ov-text">Connect the FTX-1, FTDX10 or FT-710 with the USB cable and switch it on.</p>
                 </div>
             </div>
 
@@ -615,8 +622,8 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
         <div class="side">
 
             <div class="sidesel">
-                <button type="button" class="main sel" data-side="MAIN">MAIN</button>
-                <button type="button" class="sub" data-side="SUB">SUB</button>
+                <button type="button" class="main sel" data-side="MAIN" id="sel-main">MAIN</button>
+                <button type="button" class="sub" data-side="SUB" id="sel-sub">SUB</button>
             </div>
 
             <div class="dial-wrap" id="dial-wrap" title="Drag or use the mouse wheel to tune">
@@ -645,7 +652,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
         <div class="pane show" data-pane="band">
             <h2>BAND · <b class="side-name">MAIN</b></h2>
             <div class="grid" id="band-grid"></div>
-            <p class="hint">The FTX-1 recalls the last frequency and mode of the band.</p>
+            <p class="hint" id="band-hint"></p>
         </div>
 
         <div class="pane" data-pane="mode">
@@ -696,9 +703,10 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                     <div class="slider"><label>SQUELCH</label><input id="r-sql" type="range" min="0" max="255" step="1"><output id="o-sql">—</output></div>
                 </div>
                 <div>
-                    <div class="group"><label>ATTENUATOR</label><div class="toggle-row"><button class="k" id="r-att" type="button">ATT 12 dB</button></div></div>
+                    <div class="group"><label>ATTENUATOR</label><div class="toggle-row" id="att-row"></div></div>
                     <div class="group"><label id="pre-label">PREAMP (HF)</label><div class="toggle-row" id="pre-row"></div></div>
                     <div class="group"><label>AGC</label><div class="toggle-row" id="agc-row"></div></div>
+                    <div class="group" id="roof-group"><label>ROOFING FILTER</label><div class="toggle-row" id="roof-row"></div></div>
                 </div>
             </div>
         </div>
@@ -713,7 +721,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                 <div>
                     <div class="group"><label>CTCSS TONE</label><select class="k" id="fm-ctcss"></select></div>
                     <div class="group"><label>DCS CODE</label><select class="k" id="fm-dcs"></select></div>
-                    <p class="hint">Shift and tone work in FM / FM-N and C4FM. The repeater offset itself is set in the radio menu (ARS sets it automatically).</p>
+                    <p class="hint" id="fm-hint"></p>
                 </div>
             </div>
         </div>
@@ -739,7 +747,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                             <button class="k warn" id="t-tunestop" type="button">TUNER STOP</button>
                         </div>
                     </div>
-                    <p class="hint">TUNE starts the antenna tuner (internal tuner with SPA-1 / Optima, or an external tuner / ATAS as set in the radio).</p>
+                    <p class="hint" id="tuner-hint"></p>
                 </div>
             </div>
         </div>
@@ -766,7 +774,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                 <button class="k" id="mem-qr" type="button">QMB RECALL</button>
                 <input class="k mem-filter" id="mem-filter" type="search" placeholder="Search name / MHz" autocomplete="off">
             </div>
-            <div class="mem-store">
+            <div class="mem-store" id="mem-store-row">
                 <label>STORE <b class="side-name">MAIN</b> IN CHANNEL</label>
                 <input class="k" id="mem-ch" type="number" min="1" max="99" step="1">
                 <input class="k" id="mem-name" type="text" maxlength="12" placeholder="NAME (12)" autocomplete="off">
@@ -782,7 +790,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
                 <button class="k" id="a-rx" type="button">RX AUDIO ON</button>
                 <div class="slider" style="flex:1;min-width:260px;margin:0"><label>VOLUME</label><input id="a-vol" type="range" min="0" max="200" step="1" value="100"><output id="o-vol">100 %</output></div>
             </div>
-            <p class="hint">Audio comes from the sound card set in Settings → Audio (the FTX-1 USB sound card, e.g. <code>hw:CARD=CODEC,DEV=0</code>).</p>
+            <p class="hint">Audio comes from the USB sound card built into the radio (same USB cable as CAT).</p>
         </div>
 
     </section>
@@ -791,8 +799,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
 
 <div class="toast" id="toast"></div>
 
-<script src="/js/ftx1-remote.js?v=2"></script>
-<script src="/js/demo-banner.js?v=1"></script>
+<script src="/js/remote.js"></script>
 
 </body>
 </html>

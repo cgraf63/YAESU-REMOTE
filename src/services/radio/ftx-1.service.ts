@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { config } from "../../config.js";
 import { SerialRadioBase } from "./serial-radio-base.js";
-import type { RadioService } from "./radio.interface.js";
+import type { RadioMemory, RadioProfile, YaesuRadio } from "./radio.interface.js";
+import { YAESU_CTCSS, YAESU_DCS } from "./yaesu-tables.js";
 
 
 /*
@@ -33,9 +35,7 @@ import type { RadioService } from "./radio.interface.js";
  *       recall on MAIN / SUB, VM000 back to VFO, CH0 / CH1 up / down,
  *       write = load SUB, MC1nnnnn cursor, VM000, BM; - then restore SUB
  *
- * The driver keeps the method names of the FTDX10 driver, so the
- * dashboard (spot tuning, split) works with it too. The dedicated
- * page /ftx1 uses getState() and control() via /api/ftx1.
+ * The page uses getProfile(), getState() and control() via /api/radio.
  */
 
 
@@ -104,36 +104,13 @@ const BAND_DEFAULTS: Record<string, [number, string]> = {
     "13": [145_500_000, "FM"], "14": [433_500_000, "FM"]
 };
 
-export interface Ftx1Memory {
-    channel: number;
-    name: string;
-    frequency: number;
-    mode: string;
-    shift: string;
-    tone: string;
-}
+export type Ftx1Memory = RadioMemory;
 
-/* CN P2=0: CTCSS tone index 000-049 (0.1 Hz) */
-export const FTX1_CTCSS = [
-    670, 693, 719, 744, 770, 797, 825, 854, 885, 915,
-    948, 974, 1000, 1035, 1072, 1109, 1148, 1188, 1230, 1273,
-    1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679,
-    1713, 1738, 1773, 1799, 1835, 1862, 1899, 1928, 1966, 1995,
-    2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418, 2503, 2541
-];
+/* CTCSS / DCS tables are the same on all current Yaesu radios */
+export const FTX1_CTCSS = YAESU_CTCSS;
+export const FTX1_DCS = YAESU_DCS;
 
-/* CN P2=1: DCS code index 000-103 */
-export const FTX1_DCS = [
-    23, 25, 26, 31, 32, 36, 43, 47, 51, 53, 54, 65, 71, 72, 73,
-    74, 114, 115, 116, 122, 125, 131, 132, 134, 143, 145, 152, 155, 156, 162,
-    165, 172, 174, 205, 212, 223, 225, 226, 243, 244, 245, 246, 251, 252, 255,
-    261, 263, 265, 266, 271, 274, 306, 311, 315, 325, 331, 332, 343, 346, 351,
-    356, 364, 365, 371, 411, 412, 413, 423, 431, 432, 445, 446, 452, 454, 455,
-    462, 464, 465, 466, 503, 506, 516, 523, 526, 532, 546, 565, 606, 612, 624,
-    627, 631, 632, 654, 662, 664, 703, 712, 723, 731, 732, 734, 743, 754
-];
-
-const MEMORY_FILE = path.join(process.cwd(), "data", "ftx1-memories.json");
+const MEMORY_FILE = path.join(config.dataDir, "ftx1-memories.json");
 
 /* MR P8 (stored tone) uses its own encoding: 1 TSQ, 2 ENC, 3 DCS */
 const MR_TONE = ["", "TSQ", "ENC", "DCS"];
@@ -221,7 +198,9 @@ function pad(value: number, length: number): string {
 }
 
 
-export class Ftx1Service extends SerialRadioBase implements RadioService {
+export class Ftx1Service extends SerialRadioBase implements YaesuRadio {
+
+    readonly model = "FTX-1" as const;
 
     private buffer = "";
     private pollCount = 0;
@@ -284,7 +263,8 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
             parity: "none",
             rtscts: false,
             pollIntervalMs: 700,
-            rxTimeoutMs: 15000
+            rxTimeoutMs: 15000,
+            expectedId: "0840"
         });
     }
 
@@ -538,7 +518,7 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
 
 
     /* ------------------------------------------------------------
-       RadioService + FTDX10-compatible methods (dashboard)
+       Set methods (used by control())
        ------------------------------------------------------------ */
 
     setFrequency(frequency: number): void {
@@ -1089,7 +1069,7 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
     }
 
     /* ------------------------------------------------------------
-       Getters (GET /api/radio)
+       Getters
        ------------------------------------------------------------ */
 
     getFrequency(): number { return this.main.frequency; }
@@ -1132,8 +1112,48 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
 
 
     /* ------------------------------------------------------------
-       Dedicated page /ftx1
+       Page (/api/radio)
        ------------------------------------------------------------ */
+
+    getLastAnswerAt(): number { return this.lastAnswerAt; }
+
+    getProfile(): RadioProfile {
+        return {
+            model: "FTX-1",
+            dualReceiver: true,
+            sides: { main: { name: "MAIN", short: "A" }, sub: { name: "SUB", short: "B" } },
+            frequency: { min: 30_000, max: 470_000_000 },
+            bands: [
+                ...["00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "13", "14", "12", "11"]
+                    .map(code => FTX1_BANDS.find(b => b.code === code)!)
+                    .map(b => ({ value: b.code, label: b.name.replace(/(\d)(m|cm)$/, "$1 $2") }))
+            ],
+            modeGroups: [
+                ["SSB", ["LSB", "USB"]],
+                ["CW", ["CW-U", "CW-L"]],
+                ["AM", ["AM", "AM-N"]],
+                ["FM", ["FM", "FM-N"]],
+                ["C4FM DIGITAL", ["C4FM-DN", "C4FM-VW"]],
+                ["DATA", ["DATA-U", "DATA-L", "DATA-FM", "DATA-FM-N"]],
+                ["RTTY / PSK", ["RTTY-U", "RTTY-L", "PSK"]]
+            ],
+            attenuator: [{ label: "OFF", value: 0 }, { label: "12 dB", value: 1 }],
+            preamp: null,
+            roofing: null,
+            agc: [{ label: "OFF", value: 0 }, { label: "FAST", value: 1 }, { label: "MID", value: 2 }, { label: "SLOW", value: 3 }, { label: "AUTO", value: 4 }],
+            dnrMax: 10,
+            nbMax: 10,
+            fm: true,
+            memories: { channels: 99, store: true, quickMemory: true },
+            cw: { memories: 5, stop: true },
+            hints: {
+                band: "The FTX-1 recalls the last frequency and mode of the band.",
+                tuner: "TUNE starts the antenna tuner (internal tuner with SPA-1 / Optima, or an external tuner / ATAS as set in the radio).",
+                fm: "Shift and tone work in FM / FM-N and C4FM. The repeater offset itself is set in the radio menu (ARS sets it automatically)."
+            },
+            showHead: true
+        };
+    }
 
     getState(): Record<string, unknown> {
 
@@ -1166,9 +1186,9 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
             toneModeCode: s.toneMode,
             processor: s.processor,
             ctcssIndex: s.ctcssIndex,
-            ctcss: (FTX1_CTCSS[s.ctcssIndex] ?? 0) / 10,
+            ctcss: (YAESU_CTCSS[s.ctcssIndex] ?? 0) / 10,
             dcsIndex: s.dcsIndex,
-            dcs: FTX1_DCS[s.dcsIndex] ?? 0,
+            dcs: YAESU_DCS[s.dcsIndex] ?? 0,
             memoryMode: s.memoryMode,
             memoryChannel: s.memoryChannel,
             memoryName: s.memoryMode ? (this.memories.get(s.memoryChannel)?.name ?? "") : ""
@@ -1177,6 +1197,7 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
         const group = bandGroup(this.side().frequency);
 
         return {
+            model: this.model,
             connected: this.isConnected(),
             alive: Date.now() - this.lastAnswerAt < 5000,
             lastError: this.getLastError(),
@@ -1209,9 +1230,9 @@ export class Ftx1Service extends SerialRadioBase implements RadioService {
             breakIn: this.breakIn,
             monitor: this.monitorLevel,
             ctcssIndex: this.side().ctcssIndex,
-            ctcss: (FTX1_CTCSS[this.side().ctcssIndex] ?? 0) / 10,
+            ctcss: (YAESU_CTCSS[this.side().ctcssIndex] ?? 0) / 10,
             dcsIndex: this.side().dcsIndex,
-            dcs: FTX1_DCS[this.side().dcsIndex] ?? 0,
+            dcs: YAESU_DCS[this.side().dcsIndex] ?? 0,
             memoryScan: { ...this.memScan },
             cwMemories: [...this.cwMemories],
             recentlySet: Date.now() - this.lastSetAt < 1500

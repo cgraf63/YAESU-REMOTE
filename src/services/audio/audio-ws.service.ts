@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 
-import { shackSettings } from "../../config/settings.config.js";
+import { config } from "../../config.js";
 
 
 let audioProcess:
@@ -20,7 +20,7 @@ function startAudioCapture(): void {
         return;
     }
 
-    if (!shackSettings.audio.enabled) {
+    if (!config.audio.enabled) {
 
         console.log(
             "AUDIO: disabled by configuration"
@@ -33,7 +33,7 @@ function startAudioCapture(): void {
         device,
         sampleRate,
         channels
-    } = shackSettings.audio;
+    } = config.audio;
 
 
     console.log(
@@ -236,7 +236,7 @@ export function startAudioWebSocket(
 }
 
 
-/* SHACK-SERVER TX AUDIO */
+/* TX AUDIO (browser microphone -> radio) */
 
 let txAudioProcess:
     ChildProcessByStdio<Writable, null, Readable> | null = null;
@@ -251,7 +251,7 @@ function startTxAudio(): void {
         return;
     }
 
-    if (!shackSettings.audio.enabled) {
+    if (!config.audio.enabled) {
 
         console.log(
             "TX AUDIO: disabled by configuration"
@@ -264,7 +264,7 @@ function startTxAudio(): void {
         device,
         sampleRate,
         channels
-    } = shackSettings.audio;
+    } = config.audio;
 
 
     console.log(

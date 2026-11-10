@@ -1,0 +1,28 @@
+{
+  "name": "yaesu-remote",
+  "version": "0.1.0",
+  "description": "Browser remote for Yaesu FTX-1, FTDX10 and FT-710 on a Raspberry Pi Zero 2 W",
+  "private": true,
+  "type": "module",
+  "author": "HB9OM",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc && rm -rf dist/public && cp -r src/public dist/public",
+    "typecheck": "tsc --noEmit",
+    "sim": "python3 tools/sim/yaesu_sim.py"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

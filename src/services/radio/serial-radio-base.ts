@@ -1,4 +1,4 @@
-import { SerialPort } from "serialport";
+import { TtyPort } from "./tty-port.js";
 
 /*
  * SerialRadioBase
@@ -51,6 +51,12 @@ export interface SerialRadioOptions {
     /* Delay between two open attempts (ms). */
     reconnectDelayMs?: number;
 
+    /*
+     * Expected answer to "ID;" (e.g. "0840"). Checked after every open
+     * and every 10th poll: another radio on the same port is noticed.
+     */
+    expectedId?: string;
+
 }
 
 
@@ -67,7 +73,7 @@ export abstract class SerialRadioBase {
      * Drivers that need direct access (e.g. an extra "data" listener)
      * use this.port?.on(...) / this.port?.removeListener(...).
      */
-    protected readonly port: SerialPort | null;
+    protected readonly port: TtyPort | null;
 
     private readonly pollIntervalMs: number;
     private readonly rxTimeoutMs: number;
@@ -81,6 +87,11 @@ export abstract class SerialRadioBase {
     private lastOpenError = "";
     private lastRxAt = 0;
 
+    private readonly expectedId: string;
+    private seenId = "";
+    private idCarry = "";
+    private pollTicks = 0;
+
 
     constructor(options: SerialRadioOptions) {
 
@@ -91,16 +102,15 @@ export abstract class SerialRadioBase {
         this.pollIntervalMs = options.pollIntervalMs ?? 0;
         this.rxTimeoutMs = options.rxTimeoutMs ?? 0;
         this.reconnectDelayMs = options.reconnectDelayMs ?? 5000;
+        this.expectedId = options.expectedId ?? "";
 
         if (!options.device) {
             this.port = null;
             return;
         }
 
-        const port = new SerialPort({
-            path: options.device,
+        const port = new TtyPort(options.device, {
             baudRate: options.baudRate,
-            autoOpen: false,
             ...(options.dataBits !== undefined ? { dataBits: options.dataBits } : {}),
             ...(options.stopBits !== undefined ? { stopBits: options.stopBits } : {}),
             ...(options.parity !== undefined ? { parity: options.parity } : {}),
@@ -109,6 +119,7 @@ export abstract class SerialRadioBase {
 
         port.on("data", (data: Buffer) => {
             this.lastRxAt = Date.now();
+            if (this.expectedId) this.watchId(data);
             this.onData(data);
         });
 
@@ -189,6 +200,8 @@ export abstract class SerialRadioBase {
             this.port.close();
         }
 
+        this.port?.removeAllListeners();
+
     }
 
     /* Serial port really open. */
@@ -199,6 +212,11 @@ export abstract class SerialRadioBase {
     /* Last open error ("" while connected or when there was none). */
     getLastError(): string {
         return this.lastOpenError;
+    }
+
+    /* The radio answered ID; with another model than expected. */
+    isWrongRadio(): boolean {
+        return this.seenId !== "" && this.seenId !== this.expectedId;
     }
 
     /* Time of the last received data (ms since epoch, 0 = never). */
@@ -261,6 +279,10 @@ export abstract class SerialRadioBase {
 
             this.lastOpenError = "";
             this.lastRxAt = Date.now();
+            this.seenId = "";
+            this.idCarry = "";
+
+            if (this.expectedId) port.write("ID;");
 
             this.onConnected();
             this.startPolling();
@@ -311,8 +333,18 @@ export abstract class SerialRadioBase {
 
             this.poll();
 
+            if (this.expectedId && ++this.pollTicks % 10 === 0) this.write("ID;");
+
         }, this.pollIntervalMs);
 
+    }
+
+    private watchId(data: Buffer): void {
+        const text = this.idCarry + data.toString("latin1");
+        const all = [...text.matchAll(/ID(\d{4});/g)];
+        const last = all[all.length - 1];
+        if (last) this.seenId = last[1] ?? "";
+        this.idCarry = text.slice(-7);
     }
 
     private stopPolling(): void {
