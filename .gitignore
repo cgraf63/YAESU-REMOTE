@@ -4,3 +4,5 @@ dist/
 .env
 data/
 .local-types/
+__pycache__/
+*.pyc
