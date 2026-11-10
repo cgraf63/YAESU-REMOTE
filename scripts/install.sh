@@ -18,6 +18,8 @@
 #   - code to /opt/yaesu-remote, build, data in /var/lib/yaesu-remote
 #   - hostname yaesu-remote  ->  http://yaesu-remote.local
 #   - I2C on (OLED), Wi-Fi country if none is set
+#   - Pi Zero / Zero 2 W: USB at full speed (dwc_otg.speed=1) - the radio's
+#     internal USB hub otherwise drops out every minute or so
 #   - systemd: yaesu-remote (port 80), yaesu-remote-oled
 #   - polkit: user yaesu may manage Wi-Fi (no sudo)
 #   - setup network YAESU-REMOTE / yaesu-remote stored (lowest priority)
@@ -28,6 +30,7 @@
 #   --oled-driver D   ssd1306 (0.96", default) or sh1106 (1.3")
 #   --no-oled         do not install the OLED service
 #   --port N          HTTP port (default 80)
+#   --no-usb-fullspeed  Pi Zero: keep USB at high speed
 #   --dry-run         only show what would be done
 
 set -euo pipefail
@@ -44,6 +47,8 @@ OLED=1
 OLED_DRIVER=ssd1306
 PORT=80
 DRY=0
+USB_FULLSPEED=1
+REBOOT=0
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -55,7 +60,8 @@ while [ $# -gt 0 ]; do
         --no-oled) OLED=0; shift ;;
         --port) PORT="$2"; shift 2 ;;
         --dry-run) DRY=1; shift ;;
-        -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+        --no-usb-fullspeed) USB_FULLSPEED=0; shift ;;
+        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -214,6 +220,7 @@ CURRENT_HOST="$(hostname)"
 if [ "$CURRENT_HOST" = "$HOSTNAME_NEW" ]; then
     ok "already set"
 else
+    REBOOT=1
     run hostnamectl set-hostname "$HOSTNAME_NEW"
     if grep -q '^127\.0\.1\.1' /etc/hosts; then
         run sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME_NEW/" /etc/hosts
@@ -229,7 +236,10 @@ ok "http://$HOSTNAME_NEW.local"
 step "I2C and Wi-Fi country"
 
 if command -v raspi-config > /dev/null; then
-    run raspi-config nonint do_i2c 0
+    if [ "$(raspi-config nonint get_i2c 2> /dev/null || echo 1)" != 0 ]; then
+        REBOOT=1
+        run raspi-config nonint do_i2c 0
+    fi
     ok "I2C on"
     WC="$(raspi-config nonint get_wifi_country 2> /dev/null || true)"
     if [ -z "$WC" ]; then
@@ -240,6 +250,34 @@ if command -v raspi-config > /dev/null; then
     fi
 else
     warn "raspi-config not found (not a Raspberry Pi OS?) - enable I2C yourself"
+fi
+
+# ---------------------------------------------------------------------
+step "USB"
+
+# Pi Zero / Zero 2 W (dwc_otg): full-speed devices behind the radio's
+# high-speed hub (CAT bridge, sound card) make the whole hub drop out
+# now and then. At full speed (12 Mbit/s, plenty for CAT and audio) the
+# problem is gone. Not on the Pi 3: its Ethernet hangs on the same bus.
+MODEL="$( { tr -d '\0' < /proc/device-tree/model; } 2> /dev/null || echo unknown)"
+CMDLINE=""
+for f in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
+    [ -f "$f" ] && { CMDLINE="$f"; break; }
+done
+
+if [[ "$MODEL" != *"Pi Zero"* ]]; then
+    ok "$MODEL: nothing to do"
+elif [ "$USB_FULLSPEED" = 0 ]; then
+    warn "$MODEL: USB full speed skipped (--no-usb-fullspeed)"
+elif [ -z "$CMDLINE" ]; then
+    warn "cmdline.txt not found - add dwc_otg.speed=1 yourself"
+elif grep -qw 'dwc_otg.speed=1' "$CMDLINE"; then
+    ok "$MODEL: USB full speed already set"
+else
+    REBOOT=1
+    run cp "$CMDLINE" "$CMDLINE.yaesu-remote.bak"
+    run sed -i '1 s/[[:space:]]*$/ dwc_otg.speed=1/' "$CMDLINE"
+    ok "$MODEL: USB full speed (dwc_otg.speed=1 in $CMDLINE, backup .yaesu-remote.bak)"
 fi
 
 # ---------------------------------------------------------------------
@@ -317,5 +355,5 @@ echo "  Remote:  http://$HOSTNAME_NEW.local$P   ${IP:+or http://$IP$P}"
 echo "  Wi-Fi:   http://$HOSTNAME_NEW.local$P/wifi.html"
 echo "  Logs:    journalctl -u yaesu-remote -f"
 [ "$OLED" = 1 ] && echo "  OLED:    journalctl -u yaesu-remote-oled -f   (I2C becomes active after a reboot)"
-[ "$CURRENT_HOST" != "$HOSTNAME_NEW" ] && echo "  ${YELLOW}Reboot recommended (new hostname, I2C): sudo reboot${OFF}"
+[ "$REBOOT" = 1 ] && echo "  ${YELLOW}Please reboot now (hostname / I2C / USB settings): sudo reboot${OFF}"
 echo

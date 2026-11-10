@@ -30,6 +30,10 @@ The script installs Node.js 22, creates the user `yaesu`, builds into `/opt/yaes
 
 Radio: USB cable to the Pi's **USB** port (not PWR) – on the Zero 2 W with a micro-USB OTG adapter or cable.
 
+Pi Zero / Zero 2 W: the script adds `dwc_otg.speed=1` to `cmdline.txt` (USB at 12 Mbit/s). Without it the radio's internal USB hub (CAT bridge + sound card) dropped out every 30–60 s on the Zero's USB controller. Skip with `--no-usb-fullspeed`.
+
+Audio: the sound card on the radio's USB hub is found automatically (FTDX10 “CODEC”, FTX-1 C-Media “Device”); set `audio.device` / `AUDIO_DEVICE` to override.
+
 ## Run (development)
 
 Node 22. Only runtime dependency: `ws` (audio WebSocket). The serial port is opened directly (`stty` + `/dev/ttyUSB…`), no native modules.
@@ -47,7 +51,7 @@ Configuration is optional – `data/config.json` or environment:
 | HTTP port | `PORT` | 8080 |
 | CAT device | `CAT_DEVICE` | `auto` (CP2105 interface 00 via `/dev/serial/by-id`, else `ttyUSB*` / `ttyACM*`) |
 | CAT baud rate | `CAT_BAUD` | auto: 38400, 115200, 19200, 9600, 4800 |
-| Audio device | `AUDIO_DEVICE` | `plughw:CARD=CODEC,DEV=0` (USB sound card of the radio) |
+| Audio device | `AUDIO_DEVICE` | `auto` (sound card on the radio's USB hub) |
 | Audio on/off | `AUDIO=off` | on |
 | Data directory | `YAESU_DATA` | `./data` |
 

@@ -10,7 +10,7 @@ import path from "node:path";
  *   {
  *     "http":  { "port": 8080, "host": "0.0.0.0" },
  *     "cat":   { "device": "auto", "baudRate": 0 },
- *     "audio": { "enabled": true, "device": "plughw:CARD=CODEC,DEV=0" },
+ *     "audio": { "enabled": true, "device": "auto" },      // or e.g. "plughw:CARD=CODEC,DEV=0"
  *     "wifi":  { "interface": "wlan0" }
  *   }
  *
@@ -24,6 +24,7 @@ export interface Config {
     http: { port: number; host: string };
     /* device "auto" = search; baudRate 0 = try the usual rates */
     cat: { device: string; baudRate: number };
+    /* device "auto" = the sound card on the radio's USB hub (audio-device.ts) */
     audio: { enabled: boolean; device: string; sampleRate: number; channels: number };
     /*
      * Wi-Fi via NetworkManager. The setup network is the way in on the
@@ -65,7 +66,7 @@ export const config: Config = {
     },
     audio: {
         enabled: env.AUDIO ? env.AUDIO !== "off" : file.audio?.enabled ?? true,
-        device: env.AUDIO_DEVICE || file.audio?.device || "plughw:CARD=CODEC,DEV=0",
+        device: env.AUDIO_DEVICE || file.audio?.device || "auto",
         sampleRate: file.audio?.sampleRate || 48000,
         channels: file.audio?.channels || 1
     },

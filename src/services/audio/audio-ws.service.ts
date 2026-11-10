@@ -4,6 +4,7 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 
 import { config } from "../../config.js";
+import { resolveAudioDevice } from "./audio-device.js";
 
 
 let audioProcess:
@@ -29,11 +30,8 @@ function startAudioCapture(): void {
         return;
     }
 
-    const {
-        device,
-        sampleRate,
-        channels
-    } = config.audio;
+    const { sampleRate, channels } = config.audio;
+    const device = resolveAudioDevice();
 
 
     console.log(
@@ -260,11 +258,8 @@ function startTxAudio(): void {
         return;
     }
 
-    const {
-        device,
-        sampleRate,
-        channels
-    } = config.audio;
+    const { sampleRate, channels } = config.audio;
+    const device = resolveAudioDevice();
 
 
     console.log(
