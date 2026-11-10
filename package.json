@@ -14,7 +14,8 @@
     "start": "node dist/index.js",
     "build": "tsc && rm -rf dist/public && cp -r src/public dist/public",
     "typecheck": "tsc --noEmit",
-    "sim": "python3 tools/sim/yaesu_sim.py"
+    "sim": "python3 tools/sim/yaesu_sim.py",
+    "wifi-import": "node dist/cli/wifi-import.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

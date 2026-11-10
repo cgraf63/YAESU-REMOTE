@@ -68,6 +68,9 @@ button { cursor: pointer; }
 .link-dot i { width: 9px; height: 9px; border-radius: 50%; background: var(--tx); }
 .link-dot.ok i { background: var(--ok); box-shadow: 0 0 8px rgba(89,224,90,.7); }
 
+.navbtn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--key-line); background: var(--key); color: var(--text); text-decoration: none; font-weight: 800; font-size: 12px; letter-spacing: .08em; }
+.navbtn:hover { border-color: #4b5966; }
+
 .pwr {
     width: 34px; height: 34px;
     border-radius: 50%;
@@ -533,6 +536,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
     <span class="link-dot" id="link"><i></i><span id="link-text">CONNECTING</span></span>
     <div class="spacer"></div>
     <div class="clock" id="clock"></div>
+    <a class="navbtn" href="/wifi.html" title="Wi-Fi networks">WI-FI</a>
     <button class="pwr" id="pwr" type="button" title="Transceiver on / off">⏻</button>
 </header>
 

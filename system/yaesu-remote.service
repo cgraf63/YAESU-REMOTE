@@ -1,0 +1,29 @@
+# /etc/systemd/system/yaesu-remote.service
+#
+# Runs the server as the unprivileged user "yaesu" (groups dialout + audio
+# for the radio's serial port and sound card). Before the start, as root
+# ("+"): setup network stored, wifi.txt from the boot partition imported.
+
+[Unit]
+Description=YAESU-REMOTE (browser remote for Yaesu FTX-1 / FTDX10 / FT-710)
+After=network.target NetworkManager.service sound.target
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=yaesu
+Group=yaesu
+SupplementaryGroups=dialout audio
+WorkingDirectory=/opt/yaesu-remote
+Environment=NODE_ENV=production
+Environment=YAESU_DATA=/var/lib/yaesu-remote
+Environment=PORT=80
+ExecStartPre=+/usr/bin/node /opt/yaesu-remote/dist/cli/wifi-import.js
+ExecStart=/usr/bin/node /opt/yaesu-remote/dist/index.js
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+StateDirectory=yaesu-remote
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

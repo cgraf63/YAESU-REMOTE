@@ -37,6 +37,18 @@ Configuration is optional – `data/config.json` or environment:
 
 The box notices when the radio is swapped (other model answers `ID;`, or connection lost for 20 s) and searches again.
 
+## Wi-Fi (no hotspot on the Pi)
+
+The box joins the home router or the phone hotspot. Setup in the browser: **WI-FI** on the remote page (`/wifi.html`).
+
+- **First start:** turn on a phone hotspot `YAESU-REMOTE`, password `yaesu-remote` (2.4 GHz / iPhone “Maximise Compatibility”). The box joins it; open `http://yaesu-remote.local` or the address shown in the phone's hotspot settings.
+- **Or** put `wifi.txt` on the boot drive of the SD card (see `system/wifi.txt.example`): `ssid=` / `password=` pairs, best first, optional `country=`. Imported at start, passwords are removed from the file afterwards.
+- **Saved networks in order** (NetworkManager autoconnect priority 100, 90, …): the box takes the first one in range. The setup network always stays last (priority −100) and cannot be deleted.
+- **Switching** warns first (the page loses the connection). If the new network does not come up within 30 s, the box goes back to the previous one.
+- **ntfy:** with a topic set, the box sends “YAESU-REMOTE online – 192.168.x.x” with a link whenever it gets a new address (Android often cannot open `.local` names).
+
+On the Pi: `system/yaesu-remote.service` (systemd, user `yaesu`, imports `wifi.txt` as root before the start) and `system/50-yaesu-remote.rules` (polkit: user `yaesu` may manage NetworkManager, no sudo).
+
 ## Test without a radio
 
 `tools/sim/yaesu_sim.py` simulates an FTX-1 or FTDX10 on a virtual serial port (Python 3, standard library only):
@@ -48,6 +60,8 @@ CAT_DEVICE=/tmp/yaesu-sim AUDIO=off npm run dev
 
 Options: `--head spa1` (FTX-1 with SPA-1), `--refuse-bs` (BS answered with `?`, tests the band fallback), `--verbose`.
 
+Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/tmp/fake-nmcli.json`: networks in range with their passwords, saved connections). A wrong password makes the switch fail and fall back, like on the Pi.
+
 ## API
 
 | | |
@@ -57,12 +71,15 @@ Options: `--head spa1` (FTX-1 with SPA-1), `--refuse-bs` (BS answered with `?`, 
 | `GET /api/radio/profile` | what the radio can do, CTCSS / DCS tables |
 | `POST /api/radio/control` | `{ control, value }` |
 | `GET /api/radio/memories`, `POST …/store`, `POST …/rename` | memory channels (FTX-1) |
+| `GET /api/wifi`, `…/saved`, `…/scan` | Wi-Fi status, saved networks, networks in range |
+| `POST /api/wifi/add`, `…/remove`, `…/order`, `…/connect` | manage networks, switch with fallback |
+| `GET/POST /api/wifi/ntfy`, `POST …/ntfy/test` | ntfy message with the address |
 | `WS /audio`, `WS /audio-tx` | RX / TX audio, 48 kHz, 16 bit, mono |
 
 ## Roadmap
 
 1. ~~Slim server, FTX-1 + FTDX10 drivers, detection, adaptive page~~
 2. FT-710 driver (CAT manual + Hamlib)
-3. Wi-Fi setup with NetworkManager: hotspot `YAESU-REMOTE-Setup`, then `yaesu-remote.local`, hotspot again when the Wi-Fi is gone
+3. ~~Wi-Fi setup in the browser (no hotspot on the Pi): setup network, `wifi.txt`, ordered networks, fallback, ntfy~~ – test on the Zero 2 W pending
 4. HTTPS (browser microphone for TX), Opus audio for mobile use
 5. SD card image for the Zero 2 W

@@ -10,11 +10,12 @@ import path from "node:path";
  *   {
  *     "http":  { "port": 8080, "host": "0.0.0.0" },
  *     "cat":   { "device": "auto", "baudRate": 0 },
- *     "audio": { "enabled": true, "device": "plughw:CARD=CODEC,DEV=0" }
+ *     "audio": { "enabled": true, "device": "plughw:CARD=CODEC,DEV=0" },
+ *     "wifi":  { "interface": "wlan0" }
  *   }
  *
  * Environment: PORT, HOST, CAT_DEVICE, CAT_BAUD, AUDIO_DEVICE, AUDIO,
- * YAESU_DATA (data directory).
+ * YAESU_DATA (data directory), NMCLI (nmcli command, for tests).
  */
 
 export interface Config {
@@ -24,6 +25,11 @@ export interface Config {
     /* device "auto" = search; baudRate 0 = try the usual rates */
     cat: { device: string; baudRate: number };
     audio: { enabled: boolean; device: string; sampleRate: number; channels: number };
+    /*
+     * Wi-Fi via NetworkManager. The setup network is the way in on the
+     * first start: a phone hotspot with exactly this name and password.
+     */
+    wifi: { interface: string; nmcli: string; setupSsid: string; setupPassword: string };
 }
 
 const dataDir = process.env.YAESU_DATA || path.join(process.cwd(), "data");
@@ -62,5 +68,11 @@ export const config: Config = {
         device: env.AUDIO_DEVICE || file.audio?.device || "plughw:CARD=CODEC,DEV=0",
         sampleRate: file.audio?.sampleRate || 48000,
         channels: file.audio?.channels || 1
+    },
+    wifi: {
+        interface: file.wifi?.interface || "wlan0",
+        nmcli: env.NMCLI || "nmcli",
+        setupSsid: "YAESU-REMOTE",
+        setupPassword: "yaesu-remote"
     }
 };
