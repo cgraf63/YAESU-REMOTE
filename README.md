@@ -14,7 +14,23 @@ One page in the FTX-1 design for all radios. The server detects the transceiver 
 
 Role tags under the two frequencies: FTX-1 – transmitting side red **TRX**, other side green **RX**. FTDX10 / FT-710 – without split the active VFO shows red **TRX**; in split the active VFO shows green **RX** and the other one red **TX**.
 
-## Run
+## Install on the Raspberry Pi
+
+Raspberry Pi OS Lite (Bookworm or newer, 32 or 64 bit) on a Zero 2 W, 3, 4 or 5. Write the card with the Raspberry Pi Imager (user, SSH and – if you like – Wi-Fi in its settings), then on the Pi:
+
+```sh
+sudo apt install -y git
+git clone -b feature/server-core https://github.com/cgraf63/YAESU-REMOTE.git
+cd YAESU-REMOTE
+sudo ./scripts/install.sh            # options: --oled-driver sh1106, --no-oled, --port 8080, --dry-run
+sudo reboot
+```
+
+The script installs Node.js 22, creates the user `yaesu`, builds into `/opt/yaesu-remote`, sets the hostname `yaesu-remote`, turns on I2C and installs the services (`yaesu-remote` on port 80, `yaesu-remote-oled`) and the polkit rule. Running it again after `git pull` updates the box.
+
+Radio: USB cable to the Pi's **USB** port (not PWR) – on the Zero 2 W with a micro-USB OTG adapter or cable.
+
+## Run (development)
 
 Node 22. Only runtime dependency: `ws` (audio WebSocket). The serial port is opened directly (`stty` + `/dev/ttyUSB…`), no native modules.
 
