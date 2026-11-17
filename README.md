@@ -14,6 +14,10 @@ One page in the FTX-1 design for all radios. The server detects the transceiver 
 
 Role tags under the two frequencies: FTX-1 – transmitting side red **TRX**, other side green **RX**. FTDX10 / FT-710 – without split the active VFO shows red **TRX**; in split the active VFO shows green **RX** and the other one red **TX**.
 
+## Quick start (ready-made image)
+
+One A4 page for customers: [Kurzanleitung (Deutsch)](docs/quickstart/YAESU-REMOTE_Kurzanleitung_DE.pdf) · [Quick start (English)](docs/quickstart/YAESU-REMOTE_QuickStart_EN.pdf). Source and layout: `docs/quickstart/quickstart.py` (`python3 docs/quickstart/quickstart.py` rebuilds both PDFs; needs playwright + Chromium).
+
 ## Install on the Raspberry Pi
 
 Raspberry Pi OS Lite (Bookworm or newer, 32 or 64 bit) on a Zero 2 W, 3, 4 or 5. Write the card with the Raspberry Pi Imager (user, SSH and – if you like – Wi-Fi in its settings), then on the Pi:
