@@ -11,11 +11,12 @@ import path from "node:path";
  *     "http":  { "port": 8080, "host": "0.0.0.0" },
  *     "cat":   { "device": "auto", "baudRate": 0 },
  *     "audio": { "enabled": true, "device": "auto" },      // or e.g. "plughw:CARD=CODEC,DEV=0"
- *     "wifi":  { "interface": "wlan0" }
+ *     "wifi":  { "interface": "wlan0", "hotspot": false }   // hotspot: own setup Wi-Fi when offline
  *   }
  *
  * Environment: PORT, HOST, CAT_DEVICE, CAT_BAUD, AUDIO_DEVICE, AUDIO,
- * YAESU_DATA (data directory), NMCLI (nmcli command, for tests).
+ * YAESU_DATA (data directory), NMCLI (nmcli command, for tests),
+ * WIFI_HOTSPOT=1 (own setup Wi-Fi when offline, see wifi.service.ts).
  */
 
 export interface Config {
@@ -30,7 +31,7 @@ export interface Config {
      * Wi-Fi via NetworkManager. The setup network is the way in on the
      * first start: a phone hotspot with exactly this name and password.
      */
-    wifi: { interface: string; nmcli: string; setupSsid: string; setupPassword: string };
+    wifi: { interface: string; nmcli: string; setupSsid: string; setupPassword: string; hotspot: boolean };
 }
 
 const dataDir = process.env.YAESU_DATA || path.join(process.cwd(), "data");
@@ -74,6 +75,8 @@ export const config: Config = {
         interface: file.wifi?.interface || "wlan0",
         nmcli: env.NMCLI || "nmcli",
         setupSsid: "YAESU-REMOTE",
-        setupPassword: "yaesu-remote"
+        setupPassword: "yaesu-remote",
+        // ready-made image: on; own installation: scripts/install.sh --setup-hotspot
+        hotspot: env.WIFI_HOTSPOT ? env.WIFI_HOTSPOT === "1" : (file.wifi as { hotspot?: boolean } | undefined)?.hotspot === true
     }
 };

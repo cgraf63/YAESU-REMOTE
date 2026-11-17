@@ -10,6 +10,10 @@ Implements only the commands YAESU-REMOTE uses. State in a JSON file
 
 Activation succeeds when the network is in range and the stored password
 matches the one in "air"; otherwise it fails like nmcli (exit 4).
+
+Access point connections (the box's setup Wi-Fi, 802-11-wireless.mode ap)
+always come up, address 10.42.0.1. Test "no network": remove the home
+network from "air" and set "active" to null in the state file.
 """
 
 import json
@@ -87,13 +91,17 @@ def main():
     if args[:2] == ["device", "show"]:
         print(f"GENERAL.STATE:{'100 (connected)' if active else '30 (disconnected)'}")
         print(f"GENERAL.CONNECTION:{esc(active['name']) if active else ''}")
-        if active:
+        if active and active.get("ap"):
+            print("IP4.ADDRESS[1]:10.42.0.1/24")
+        elif active:
             print(f"IP4.ADDRESS[1]:192.168.{1 if active['ssid'] == 'HB9OM-Home' else 43}.{state['ip_base']}/24")
         return
 
     if args[:3] == ["device", "wifi", "list"]:
         if "yes" in args:
             time.sleep(1.0)
+        if active and active.get("ap"):
+            return   # access point mode: no scan
         for a in state["air"]:
             row = {"IN-USE": "*" if active and active["ssid"] == a["ssid"] else " ", "SSID": a["ssid"],
                    "SIGNAL": a["signal"], "SECURITY": a["security"] or "--", "CHAN": a["chan"]}
@@ -102,6 +110,34 @@ def main():
 
     if args[0] == "connection" and len(args) >= 2:
         sub = args[1]
+
+        if sub == "show" and args[2:] == ["--active"]:
+            if active:
+                row = {"NAME": active["name"], "TYPE": "802-11-wireless", "STATE": "activated"}
+                print(":".join(esc(row[f]) for f in fields))
+            if state.get("wired"):
+                row = {"NAME": "Wired connection 1", "TYPE": "802-3-ethernet", "STATE": "activated"}
+                print(":".join(esc(row[f]) for f in fields))
+            return
+
+        # by name (the setup Wi-Fi)
+        if sub in ("up", "down", "delete") and len(args) >= 4 and args[2] == "id":
+            c = next((c for c in conns if c["name"] == args[3]), None)
+            if not c:
+                fail(f"unknown connection '{args[3]}'.", 10)
+            if sub == "delete":
+                conns.remove(c)
+                if state.get("active") == c["uuid"]:
+                    state["active"] = None
+            elif sub == "down":
+                if state.get("active") != c["uuid"]:
+                    fail(f"'{args[3]}' is not an active connection.", 10)
+                state["active"] = None
+            else:
+                time.sleep(1)
+                state["active"] = c["uuid"]
+            save(state)
+            return
 
         if sub == "show" and len(args) == 2:
             for c in conns:
@@ -126,7 +162,8 @@ def main():
             opts = dict(zip(kv[0::2], kv[1::2]))
             c = {"uuid": str(uuidlib.uuid4()), "name": opts.get("con-name", opts.get("ssid")), "ssid": opts["ssid"],
                  "priority": int(opts.get("connection.autoconnect-priority", 0)), "psk": opts.get("wifi-sec.psk", ""),
-                 "hidden": opts.get("802-11-wireless.hidden") == "yes"}
+                 "hidden": opts.get("802-11-wireless.hidden") == "yes",
+                 "ap": opts.get("802-11-wireless.mode") == "ap"}
             conns.append(c)
             save(state)
             print(f"Connection '{c['name']}' ({c['uuid']}) successfully added.")

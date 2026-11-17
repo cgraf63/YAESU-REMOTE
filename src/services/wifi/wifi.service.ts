@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -6,8 +7,8 @@ import { config } from "../../config.js";
 import { NmcliError, nmcli, terseRows } from "./nmcli.js";
 
 /*
- * Wi-Fi via NetworkManager (nmcli). No hotspot on the Pi: the box joins
- * the home router or the phone hotspot.
+ * Wi-Fi via NetworkManager (nmcli). The box joins the home router or the
+ * phone hotspot.
  *
  *   - setup network: "YAESU-REMOTE" / "yaesu-remote", always stored with
  *     the lowest priority, cannot be deleted. On the first start the phone
@@ -19,6 +20,14 @@ import { NmcliError, nmcli, terseRows } from "./nmcli.js";
  *     network does not come up within 30 s, the previous one is activated.
  *   - ntfy: when the box is online with a new address, a message with a
  *     link goes to the phone (Android often cannot open .local names).
+ *   - own setup Wi-Fi (only with config wifi.hotspot, e.g. the ready-made
+ *     image): no network for 3 minutes (10 when a home network is saved,
+ *     the router may still be starting after a power cut) -> the box
+ *     opens the open Wi-Fi "YAESU-REMOTE-Setup" (10.42.0.1). Phones that
+ *     join get this Wi-Fi page (captive portal: every name resolves to
+ *     the box, dnsmasq-shared.d from the installer). While nobody uses
+ *     it, the saved networks are tried again every 5 minutes. A cable
+ *     or a working network ends it.
  */
 
 const SETUP_NAME = "yaesu-remote-setup";
@@ -27,6 +36,17 @@ const TOP_PRIORITY = 100;
 const PRIORITY_STEP = 10;
 const SWITCH_TIMEOUT_S = 30;
 const WATCH_INTERVAL_MS = 15_000;
+
+const HOTSPOT_NAME = "yaesu-remote-hotspot";
+const HOTSPOT_SSID = `${config.wifi.setupSsid}-Setup`;
+export const HOTSPOT_IP = "10.42.0.1";
+/* seconds (WIFI_HOTSPOT_SCALE=0.05 for tests: everything 20 x faster) */
+const SCALE = Number(process.env.WIFI_HOTSPOT_SCALE) || 1;
+const HOTSPOT_WAIT_FIRST = 180 * SCALE;     // only the setup network saved (first start)
+const HOTSPOT_WAIT_SAVED = 600 * SCALE;     // a home network is saved: router after a power cut
+const HOTSPOT_WAIT_AGAIN = 45 * SCALE;      // a network chosen on the setup page did not come up
+const HOTSPOT_RETRY_IDLE = 300 * SCALE;     // hotspot unused this long -> saved networks again
+const HOTSPOT_RETRY_WAIT = 60 * SCALE;
 
 const SETTINGS_FILE = () => path.join(config.dataDir, "wifi.json");
 
@@ -62,6 +82,8 @@ export interface WifiStatus {
     switching: SwitchInfo | null;
     lastSwitch: SwitchInfo | null;
     setup: { ssid: string; password: string };
+    /* own setup Wi-Fi of the box: on, and is it open now */
+    hotspot: { enabled: boolean; active: boolean; ssid: string; ip: string };
 }
 
 export interface SwitchInfo {
@@ -118,6 +140,16 @@ export class WifiService {
     private ssidCache = new Map<string, string>();
     private lastStatus: { at: number; status: WifiStatus } | null = null;
 
+    /* own setup Wi-Fi */
+    private hotspotActive = false;
+    private hotspotBusy = false;
+    private hotspotScan: WifiNetwork[] = [];
+    private offlineSince = Date.now();
+    private hotspotUsedAt = 0;          // last request of a phone in the setup Wi-Fi
+    private hotspotStartedAt = 0;
+    private hotspotChosen = false;      // a network was chosen on the setup page
+    private hotspotTimer: NodeJS.Timeout | null = null;
+
     constructor(command = config.wifi.nmcli, iface = config.wifi.interface) {
         this.cmd = command;
         this.iface = iface;
@@ -161,7 +193,8 @@ export class WifiService {
             urls: [],
             switching: this.switching,
             lastSwitch: this.lastSwitch,
-            setup: { ssid: config.wifi.setupSsid, password: config.wifi.setupPassword }
+            setup: { ssid: config.wifi.setupSsid, password: config.wifi.setupPassword },
+            hotspot: { enabled: config.wifi.hotspot, active: this.hotspotActive, ssid: HOTSPOT_SSID, ip: HOTSPOT_IP }
         };
 
         if (!(await this.isAvailable())) return { ...base, error: this.lastError };
@@ -206,7 +239,12 @@ export class WifiService {
     /* status not older than maxAgeMs (display, frequent polling) */
     async cachedStatus(maxAgeMs = 5000): Promise<WifiStatus> {
         if (this.lastStatus && Date.now() - this.lastStatus.at < maxAgeMs) {
-            return { ...this.lastStatus.status, switching: this.switching, lastSwitch: this.lastSwitch };
+            return {
+                ...this.lastStatus.status,
+                switching: this.switching,
+                lastSwitch: this.lastSwitch,
+                hotspot: { ...this.lastStatus.status.hotspot, active: this.hotspotActive }
+            };
         }
         return this.status();
     }
@@ -219,7 +257,8 @@ export class WifiService {
     async savedNetworks(): Promise<SavedNetwork[]> {
 
         const rows = terseRows(await this.run(["-t", "-f", "NAME,UUID,TYPE,AUTOCONNECT-PRIORITY,ACTIVE", "connection", "show"]));
-        const wifi = rows.filter(([, , type]) => type === "802-11-wireless");
+        // the box's own setup Wi-Fi is no network to join
+        const wifi = rows.filter(([name, , type]) => type === "802-11-wireless" && name !== HOTSPOT_NAME);
 
         const list: SavedNetwork[] = [];
 
@@ -242,6 +281,9 @@ export class WifiService {
     }
 
     async scan(rescan: boolean): Promise<WifiNetwork[]> {
+
+        // in access point mode the Wi-Fi cannot scan: the list from before the hotspot
+        if (this.hotspotActive) return this.hotspotScan;
 
         const rows = terseRows(await this.run(
             ["-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,CHAN", "device", "wifi", "list", "ifname", this.iface, "--rescan", rescan ? "yes" : "auto"],
@@ -378,6 +420,7 @@ export class WifiService {
         };
 
         this.switching = info;
+        if (this.hotspotActive) this.hotspotChosen = true;
 
         void (async () => {
             await sleep(1500);   // let the HTTP answer go out
@@ -507,14 +550,159 @@ export class WifiService {
             console.error("WIFI: setup network:", (error as Error).message);
         }
 
+        // a hotspot left over from before (server restart): down, decide again
+        try {
+            await this.run(["connection", "down", "id", HOTSPOT_NAME]);
+        }
+        catch { /* not active */ }
+
         void this.checkOnline();
         this.watchTimer = setInterval(() => void this.checkOnline(), WATCH_INTERVAL_MS);
+
+        if (config.wifi.hotspot) {
+            console.log(`WIFI: setup Wi-Fi ${HOTSPOT_SSID} when offline`);
+            this.hotspotTimer = setInterval(() => void this.hotspotTick(), Math.max(1000, 10_000 * Math.min(1, SCALE * 4)));
+        }
 
     }
 
     stop(): void {
         if (this.watchTimer) clearInterval(this.watchTimer);
+        if (this.hotspotTimer) clearInterval(this.hotspotTimer);
         this.watchTimer = null;
+        this.hotspotTimer = null;
+    }
+
+
+    /* ------------------------------------------------------------
+       Own setup Wi-Fi (config wifi.hotspot)
+       ------------------------------------------------------------ */
+
+    /* an active cable or Wi-Fi connection that is not the setup Wi-Fi */
+    private async online(): Promise<boolean> {
+        const rows = terseRows(await this.run(["-t", "-f", "NAME,TYPE,STATE", "connection", "show", "--active"]));
+        return rows.some(([name, type, state]) =>
+            name !== HOTSPOT_NAME && (type === "802-3-ethernet" || type === "802-11-wireless") && state === "activated");
+    }
+
+    private async hotspotTick(): Promise<void> {
+
+        if (this.hotspotBusy || this.switching) return;
+        this.hotspotBusy = true;
+
+        try {
+
+            const online = await this.online();
+            const now = Date.now();
+
+            if (online) {
+                this.offlineSince = now;
+                if (this.hotspotActive) {
+                    console.log("WIFI: network is up - setup Wi-Fi off");
+                    await this.hotspotDown();
+                }
+                return;
+            }
+
+            if (this.hotspotActive) {
+                // nobody uses it: try the saved networks for a minute
+                const idleSince = Math.max(this.hotspotUsedAt, this.hotspotStartedAt);
+                if (now - idleSince > HOTSPOT_RETRY_IDLE * 1000) {
+                    console.log("WIFI: setup Wi-Fi unused - trying the saved networks again");
+                    await this.hotspotDown();
+                    this.offlineSince = now - (this.waitSeconds(await this.savedNetworks()) - HOTSPOT_RETRY_WAIT) * 1000;
+                }
+                return;
+            }
+
+            const wait = this.hotspotChosen ? HOTSPOT_WAIT_AGAIN : this.waitSeconds(await this.savedNetworks());
+            if (now - this.offlineSince >= wait * 1000) await this.hotspotUp();
+
+        }
+        catch (error) {
+            console.error("WIFI: setup Wi-Fi:", (error as Error).message);
+        }
+        finally {
+            this.hotspotBusy = false;
+        }
+
+    }
+
+    private waitSeconds(saved: SavedNetwork[]): number {
+        return saved.some(n => !n.setup) ? HOTSPOT_WAIT_SAVED : HOTSPOT_WAIT_FIRST;
+    }
+
+    private async hotspotUp(): Promise<void> {
+
+        // scan first - in access point mode the Wi-Fi cannot
+        try {
+            this.hotspotScan = await this.scan(true);
+        }
+        catch {
+            this.hotspotScan = [];
+        }
+
+        try {
+            await this.run(["connection", "delete", "id", HOTSPOT_NAME]);
+        }
+        catch { /* not there */ }
+
+        await this.run([
+            "connection", "add", "type", "wifi", "ifname", this.iface, "con-name", HOTSPOT_NAME,
+            "autoconnect", "no", "ssid", HOTSPOT_SSID,
+            "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
+            "ipv4.method", "shared", "ipv4.addresses", `${HOTSPOT_IP}/24`,
+            "ipv6.method", "disabled"
+        ]);
+        await this.run(["-w", "30", "connection", "up", "id", HOTSPOT_NAME], 40_000);
+
+        this.hotspotActive = true;
+        this.hotspotStartedAt = Date.now();
+        this.hotspotChosen = false;
+        this.lastStatus = null;
+        console.log(`WIFI: no network - setup Wi-Fi ${HOTSPOT_SSID} open, http://${HOTSPOT_IP}/`);
+
+    }
+
+    private async hotspotDown(): Promise<void> {
+        try {
+            await this.run(["connection", "down", "id", HOTSPOT_NAME]);
+        }
+        catch { /* already down (a network was activated on the same interface) */ }
+        try {
+            await this.run(["connection", "delete", "id", HOTSPOT_NAME]);
+        }
+        catch { /* gone */ }
+        this.hotspotActive = false;
+        this.lastStatus = null;
+    }
+
+    isHotspotActive(): boolean {
+        return this.hotspotActive;
+    }
+
+    /*
+     * Captive portal: while the setup Wi-Fi is open, a phone in it gets
+     * the Wi-Fi page for every address it asks for (connectivity checks
+     * of Android / iOS / Windows). true = answered here.
+     */
+    captive(req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
+
+        if (!this.hotspotActive) return false;
+
+        const remote = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+        if (!remote.startsWith(HOTSPOT_IP.replace(/\.1$/, "."))) return false;
+
+        this.hotspotUsedAt = Date.now();
+
+        const host = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+        const own = host === HOTSPOT_IP || host === `${os.hostname().toLowerCase()}.local` || host === os.hostname().toLowerCase();
+
+        if (own && url.pathname !== "/" && url.pathname !== "/index.html") return false;
+
+        res.writeHead(302, { Location: `http://${HOTSPOT_IP}/wifi.html`, "Cache-Control": "no-store" }).end();
+        return true;
+
     }
 
 }

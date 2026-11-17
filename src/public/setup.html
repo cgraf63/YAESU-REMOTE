@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0d10">
+    <title>Setup · YAESU-REMOTE</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/box.css">
+
+    <style>
+.steps { display: flex; gap: 6px; margin: 4px 0 14px; }
+.steps span { flex: 1; height: 5px; border-radius: 3px; background: var(--faint); }
+.steps span.done { background: var(--main); }
+.steps span.now { background: var(--amber); }
+.step h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .02em; }
+.step .lead { color: var(--dim); margin: 0 0 16px; line-height: 1.5; }
+.step .lead b { color: var(--text); }
+.field { display: grid; gap: 6px; margin: 0 0 12px; }
+.field label { color: var(--dim); font-size: 13px; letter-spacing: .06em; }
+.field input.k, .field select.k { width: 100%; font-size: 16px; padding: 12px; }
+.nav { display: flex; gap: 10px; justify-content: space-between; margin-top: 18px; }
+.nav .k { padding: 12px 18px; font-size: 13px; }
+.list { margin: 0 0 12px; }
+.list div { padding: 8px 12px; margin-bottom: 6px; border: 1px solid var(--key-line); border-radius: 10px; background: #12171c; font-weight: 700; }
+.list div small { color: var(--dim); font-weight: 600; margin-left: 8px; }
+.radio-box { display: flex; align-items: center; gap: 16px; padding: 16px; border-radius: 12px; background: #000; border: 1px solid #20262c; }
+.radio-box .big { font-size: 30px; font-weight: 800; }
+.radio-box .msg { color: var(--dim); font-size: 13px; }
+    </style>
+
+</head>
+
+<body>
+
+<header class="appbar">
+    <div class="title"><span id="product">YAESU-REMOTE</span> <small>SETUP</small></div>
+    <div class="spacer"></div>
+    <a class="navbtn" href="#" id="skip">SKIP SETUP</a>
+</header>
+
+<main class="rig" style="max-width:640px">
+
+    <section class="panel">
+
+        <div class="steps" id="steps"></div>
+
+        <!-- 1 welcome / callsign -->
+        <div class="step" data-step="welcome">
+            <h1>Welcome</h1>
+            <p class="lead">A few short steps, then the remote opens. Every step can be changed later.</p>
+            <div class="field" id="call-field" hidden>
+                <label for="call">YOUR CALLSIGN (for {CALL} in the CW keys)</label>
+                <input class="k" id="call" type="text" maxlength="12" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="e.g. HB9XYZ">
+            </div>
+        </div>
+
+        <!-- 2 Wi-Fi -->
+        <div class="step" data-step="wifi" hidden>
+            <h1>Wi-Fi</h1>
+            <p class="lead" id="wifi-lead">…</p>
+            <div class="list" id="wifi-saved"></div>
+            <div class="field">
+                <label for="ssid">ADD A NETWORK (home Wi-Fi, phone hotspot)</label>
+                <select class="k" id="ssid"><option value="">Searching networks …</option></select>
+                <input class="k" id="ssid-other" type="text" maxlength="32" placeholder="Network name" hidden autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+                <label for="pass">PASSWORD</label>
+                <input class="k" id="pass" type="password" maxlength="63" autocomplete="new-password">
+            </div>
+            <button class="k go" id="wifi-add" type="button">SAVE NETWORK</button>
+            <p class="hint">Saved networks are used in this order; the box takes the first one in range. The setup network <b id="setup-ssid">YAESU-REMOTE</b> always stays as the way back in. More on the WI-FI page.</p>
+        </div>
+
+        <!-- 3 ntfy -->
+        <div class="step" data-step="ntfy" hidden>
+            <h1>Message to your phone</h1>
+            <p class="lead">Optional. With the free app <b>ntfy</b> your phone gets a message with a link whenever the box gets a new address - useful on Android, where <b>.local</b> names often do not open.</p>
+            <div class="field">
+                <label for="topic">NTFY TOPIC (subscribe to the same in the app)</label>
+                <input class="k" id="topic" type="text" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="checks"><label><input type="checkbox" id="ntfy-on"> send the address to my phone</label></div>
+        </div>
+
+        <!-- 4 radio -->
+        <div class="step" data-step="radio" hidden>
+            <h1>Transceiver</h1>
+            <p class="lead" id="radio-lead">Connect the transceiver with the USB cable and switch it on. The box finds it by itself.</p>
+            <div class="radio-box">
+                <span class="tag off" id="radio-tag">SEARCHING</span>
+                <div><div class="big" id="radio-name">—</div><div class="msg" id="radio-msg"></div></div>
+            </div>
+        </div>
+
+        <div class="nav">
+            <button class="k" id="back" type="button">◀ BACK</button>
+            <button class="k go" id="next" type="button">NEXT ▶</button>
+        </div>
+
+    </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/setup.js"></script>
+
+</body>
+</html>

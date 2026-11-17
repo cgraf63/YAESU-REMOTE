@@ -26,6 +26,8 @@
 #   - systemd: yaesu-remote (port 80), yaesu-remote-oled,
 #     yaesu-remote-update@ (software update from the page)
 #   - polkit: user yaesu may manage Wi-Fi and start the update (no sudo)
+#   - yaesu-remote-boot at every boot: USB full speed on the Zero, swap with
+#     little RAM, Wi-Fi country, service access (yaesu-access.txt)
 #   - setup network YAESU-REMOTE / yaesu-remote stored (lowest priority)
 #
 # Options:
@@ -35,6 +37,10 @@
 #   --no-oled         do not install the OLED service
 #   --port N          HTTP port (default 80)
 #   --no-usb-fullspeed  Pi Zero: keep USB at high speed
+#   --setup-hotspot   own setup Wi-Fi "YAESU-REMOTE-Setup" when the box has
+#                     no network for some minutes (captive page)
+#   --image           build the ready-made SD card image (chroot): nothing
+#                     is started, Pi-specific steps run at the first boot
 #   --update          used by scripts/update.sh: build and restart in
 #                     /opt/yaesu-remote, packages only if missing
 #   --dry-run         only show what would be done
@@ -57,6 +63,8 @@ DRY=0
 USB_FULLSPEED=1
 REBOOT=0
 UPDATE=0
+IMAGE=0
+SETUP_HOTSPOT=0
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -76,7 +84,10 @@ while [ $# -gt 0 ]; do
         --dry-run) DRY=1; shift ;;
         --no-usb-fullspeed) USB_FULLSPEED=0; shift ;;
         --update) UPDATE=1; shift ;;
-        -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+        --image) IMAGE=1; shift ;;
+        --setup-hotspot) SETUP_HOTSPOT=1; shift ;;
+        --no-setup-hotspot) SETUP_HOTSPOT=0; shift ;;
+        -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -131,8 +142,8 @@ if [ -r /etc/os-release ]; then
 fi
 
 if ! command -v nmcli > /dev/null || ! systemctl is-active --quiet NetworkManager 2> /dev/null; then
-    if [ "$DRY" = 1 ]; then
-        warn "NetworkManager not running here (dry run, continuing)"
+    if [ "$DRY" = 1 ] || [ "$IMAGE" = 1 ]; then
+        warn "NetworkManager not running here (image / dry run, continuing)"
     else
         die "NetworkManager is not running. Raspberry Pi OS Bookworm or newer is needed (it uses NetworkManager)."
     fi
@@ -252,8 +263,19 @@ run chmod 0750 "$DATA"
 # ---------------------------------------------------------------------
 step "Hostname $HOSTNAME_NEW"
 
-CURRENT_HOST="$(hostname)"
-if [ "$CURRENT_HOST" = "$HOSTNAME_NEW" ]; then
+CURRENT_HOST="$(cat /etc/hostname 2> /dev/null || hostname)"
+if [ "$IMAGE" = 1 ]; then
+    # chroot: no hostnamectl
+    echo "$HOSTNAME_NEW" | put /etc/hostname
+    if grep -q '^127\.0\.1\.1' /etc/hosts; then
+        run sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME_NEW/" /etc/hosts
+    elif [ "$DRY" = 1 ]; then
+        echo "    [dry-run] add 127.0.1.1 $HOSTNAME_NEW to /etc/hosts"
+    else
+        printf '127.0.1.1\t%s\n' "$HOSTNAME_NEW" >> /etc/hosts
+    fi
+    ok "$HOSTNAME_NEW (image)"
+elif [ "$CURRENT_HOST" = "$HOSTNAME_NEW" ]; then
     ok "already set"
 else
     REBOOT=1
@@ -265,13 +287,32 @@ else
     fi
     ok "$CURRENT_HOST -> $HOSTNAME_NEW"
 fi
-run systemctl enable --now avahi-daemon > /dev/null 2>&1 || warn "avahi-daemon could not be started"
+if [ "$IMAGE" = 1 ]; then
+    run systemctl enable avahi-daemon > /dev/null 2>&1 || warn "avahi-daemon could not be enabled"
+else
+    run systemctl enable --now avahi-daemon > /dev/null 2>&1 || warn "avahi-daemon could not be started"
+fi
 ok "http://$HOSTNAME_NEW.local"
 
 # ---------------------------------------------------------------------
 step "I2C and Wi-Fi country"
 
-if command -v raspi-config > /dev/null; then
+if [ "$IMAGE" = 1 ]; then
+    # chroot: straight into config.txt / modules; the Wi-Fi country is
+    # set at the first boot (scripts/boot.sh)
+    if [ "$DRY" = 1 ]; then
+        echo "    [dry-run] dtparam=i2c_arm=on in config.txt, i2c-dev in /etc/modules"
+    else
+        for boot in /boot/firmware /boot; do
+            if [ -f "$boot/config.txt" ]; then
+                grep -q '^dtparam=i2c_arm=on' "$boot/config.txt" || echo 'dtparam=i2c_arm=on' >> "$boot/config.txt"
+                break
+            fi
+        done
+        grep -qx 'i2c-dev' /etc/modules 2> /dev/null || echo 'i2c-dev' >> /etc/modules
+    fi
+    ok "I2C on (image), Wi-Fi country $COUNTRY at the first boot"
+elif command -v raspi-config > /dev/null; then
     if [ "$(raspi-config nonint get_i2c 2> /dev/null || echo 1)" != 0 ]; then
         REBOOT=1
         run raspi-config nonint do_i2c 0
@@ -301,7 +342,9 @@ for f in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
     [ -f "$f" ] && { CMDLINE="$f"; break; }
 done
 
-if [[ "$MODEL" != *"Pi Zero"* ]]; then
+if [ "$IMAGE" = 1 ]; then
+    ok "image: set at the first boot on a Pi Zero (yaesu-remote-boot)"
+elif [[ "$MODEL" != *"Pi Zero"* ]]; then
     ok "$MODEL: nothing to do"
 elif [ "$USB_FULLSPEED" = 0 ]; then
     warn "$MODEL: USB full speed skipped (--no-usb-fullspeed)"
@@ -333,12 +376,36 @@ ok "polkit rule: $USER_NAME may manage Wi-Fi and start the update"
 put /etc/systemd/system/yaesu-remote-update@.service < "$SRC/system/yaesu-remote-update@.service"
 ok "yaesu-remote-update@.service (software update)"
 
+put /etc/systemd/system/yaesu-remote-boot.service < "$SRC/system/yaesu-remote-boot.service"
+ok "yaesu-remote-boot.service (USB, swap, Wi-Fi country, service access)"
+
+# own setup Wi-Fi: captive page (every name -> the box) and the switch
+# in config.json of the server
+if [ "$SETUP_HOTSPOT" = 1 ]; then
+    run mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+    echo "address=/#/10.42.0.1" | put /etc/NetworkManager/dnsmasq-shared.d/yaesu-remote-captive.conf
+else
+    run rm -f /etc/NetworkManager/dnsmasq-shared.d/yaesu-remote-captive.conf
+fi
+if [ "$DRY" = 1 ]; then
+    echo "    [dry-run] wifi.hotspot=$SETUP_HOTSPOT in $DATA/config.json"
+else
+    "$NODE_BIN" -e '
+        const fs = require("fs"); const f = process.argv[1];
+        let c = {}; try { c = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+        c.wifi = { ...(c.wifi || {}), hotspot: process.argv[2] === "1" };
+        fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");' "$DATA/config.json" "$SETUP_HOTSPOT"
+    chown "$USER_NAME:$USER_NAME" "$DATA/config.json"
+fi
+ok "setup Wi-Fi YAESU-REMOTE-Setup when offline: $( [ "$SETUP_HOTSPOT" = 1 ] && echo on || echo off)"
+
 # options for the next run / update
 run mkdir -p "$(dirname "$CONF")"
 printf '%s\n' \
     "# YAESU-REMOTE install options (written by scripts/install.sh)" \
     "HOSTNAME_NEW=$HOSTNAME_NEW" "COUNTRY=$COUNTRY" "OLED=$OLED" \
-    "OLED_DRIVER=$OLED_DRIVER" "PORT=$PORT" "USB_FULLSPEED=$USB_FULLSPEED" | put "$CONF"
+    "OLED_DRIVER=$OLED_DRIVER" "PORT=$PORT" "USB_FULLSPEED=$USB_FULLSPEED" \
+    "SETUP_HOTSPOT=$SETUP_HOTSPOT" | put "$CONF"
 ok "options saved ($CONF)"
 
 if [ "$OLED" = 1 ]; then
@@ -358,23 +425,38 @@ for boot in /boot/firmware /boot; do
     fi
 done
 
-run systemctl daemon-reload
-run systemctl restart polkit 2> /dev/null || true
-run systemctl enable yaesu-remote > /dev/null 2>&1
-run systemctl restart yaesu-remote
-if [ "$OLED" = 1 ]; then
-    run systemctl enable yaesu-remote-oled > /dev/null 2>&1
-    run systemctl restart yaesu-remote-oled
+if [ "$IMAGE" = 1 ]; then
+    # the customer starts with the setup assistant (routes/setup.ts)
+    echo '{ "pending": true }' | put "$DATA/setup.json"
+    run chown "$USER_NAME:$USER_NAME" "$DATA/setup.json"
+    ok "setup assistant on the first visit"
+    # chroot: only enabled, they start on the first boot
+    run systemctl enable yaesu-remote yaesu-remote-boot > /dev/null
+    if [ "$OLED" = 1 ]; then
+        run systemctl enable yaesu-remote-oled > /dev/null
+    fi
+    ok "enabled (start at the first boot)"
 else
-    run systemctl disable --now yaesu-remote-oled > /dev/null 2>&1 || true
+    run systemctl daemon-reload
+    run systemctl restart polkit 2> /dev/null || true
+    run systemctl enable yaesu-remote yaesu-remote-boot > /dev/null 2>&1
+    run systemctl restart yaesu-remote
+    if [ "$OLED" = 1 ]; then
+        run systemctl enable yaesu-remote-oled > /dev/null 2>&1
+        run systemctl restart yaesu-remote-oled
+    else
+        run systemctl disable --now yaesu-remote-oled > /dev/null 2>&1 || true
+    fi
+    ok "started"
 fi
-ok "started"
 
 # ---------------------------------------------------------------------
 step "Check"
 
 if [ "$DRY" = 1 ]; then
     echo "    [dry-run] wait for http://127.0.0.1:$PORT/api/status"
+elif [ "$IMAGE" = 1 ]; then
+    ok "image: the server starts at the first boot"
 else
     UP=0
     for _ in $(seq 1 30); do
@@ -397,6 +479,10 @@ IP="$(hostname -I 2> /dev/null | awk '{print $1}')"
 P="$( [ "$PORT" = 80 ] || echo ":$PORT")"
 
 echo
+if [ "$IMAGE" = 1 ]; then
+    echo "${GREEN}${BOLD}YAESU-REMOTE is in the image.${OFF}"
+    exit 0
+fi
 echo "${GREEN}${BOLD}YAESU-REMOTE is $( [ "$UPDATE" = 1 ] && echo updated || echo installed ).${OFF}"
 echo "  Remote:  http://$HOSTNAME_NEW.local$P   ${IP:+or http://$IP$P}"
 echo "  Wi-Fi:   http://$HOSTNAME_NEW.local$P/wifi.html"

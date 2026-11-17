@@ -1,0 +1,18 @@
+# /etc/systemd/system/yaesu-remote-boot.service
+#
+# At every boot, before the server (scripts/boot.sh): USB full speed on
+# the Pi Zero, swap with little RAM, Wi-Fi country, service access via
+# yaesu-access.txt on the boot partition.
+
+[Unit]
+Description=YAESU-REMOTE boot checks (USB, swap, Wi-Fi country, service access)
+After=local-fs.target
+Before=yaesu-remote.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/yaesu-remote/scripts/boot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

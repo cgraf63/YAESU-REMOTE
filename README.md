@@ -22,11 +22,15 @@ Raspberry Pi OS Lite (Bookworm or newer, 32 or 64 bit) on a Zero 2 W, 3, 4 or 5.
 sudo apt install -y git
 git clone -b feature/server-core https://github.com/cgraf63/YAESU-REMOTE.git
 cd YAESU-REMOTE
-sudo ./scripts/install.sh            # options: --oled-driver sh1106, --no-oled, --port 8080, --dry-run
+sudo ./scripts/install.sh            # options: --setup-hotspot, --oled-driver sh1106, --no-oled, --port 8080, --dry-run
 sudo reboot
 ```
 
 The script installs Node.js 22, creates the user `yaesu`, puts the code as a git checkout into `/opt/yaesu-remote` and builds it there, sets the hostname `yaesu-remote`, turns on I2C and installs the services (`yaesu-remote` on port 80, `yaesu-remote-oled`, `yaesu-remote-update@`) and the polkit rule. The options of the first run are kept in `/etc/yaesu-remote/install.conf`. Later updates: from the browser (below), or `git pull` and the script again.
+
+At every boot `yaesu-remote-boot` (`scripts/boot.sh`) checks: USB full speed on a Pi Zero (one reboot after setting it), a 1 GB swap file below 1.5 GB RAM (the update builds on the Pi), the Wi-Fi country, and **service access**: a file `yaesu-access.txt` on the boot partition with `user=admin` and `password=…` creates that user with sudo, turns SSH on and is deleted.
+
+The ready-made SD card image is built in the private repository `yaesu-remote-image` with `scripts/install.sh --image --setup-hotspot`: the same installation, nothing started in the chroot; on the first visit a short setup assistant (`/setup.html`: Wi-Fi, ntfy, transceiver found?) leads to the remote.
 
 Radio: USB cable to the Pi's **USB** port (not PWR) – on the Zero 2 W with a micro-USB OTG adapter or cable.
 
@@ -57,11 +61,12 @@ Configuration is optional – `data/config.json` or environment:
 
 The box notices when the radio is swapped (other model answers `ID;`, or connection lost for 20 s) and searches again.
 
-## Wi-Fi (no hotspot on the Pi)
+## Wi-Fi
 
 The box joins the home router or the phone hotspot. Setup in the browser: **WI-FI** on the remote page (`/wifi.html`).
 
 - **First start:** turn on a phone hotspot `YAESU-REMOTE`, password `yaesu-remote` (2.4 GHz / iPhone “Maximise Compatibility”). The box joins it; open `http://yaesu-remote.local` or the address shown in the phone's hotspot settings.
+- **Own setup Wi-Fi** (image, or `install.sh --setup-hotspot`): if the box has no network for 3 minutes (10 when a home network is saved – the router may still start after a power cut), it opens the open Wi-Fi `YAESU-REMOTE-Setup`. A phone that joins it gets the Wi-Fi page (captive portal, `http://10.42.0.1`); add the home Wi-Fi with *connect now*. While nobody uses it, the saved networks are tried again every 5 minutes; a cable or a working network ends it. The OLED shows `SETUP YAESU-REMOTE-Setup`.
 - **Or** put `wifi.txt` on the boot drive of the SD card (see `system/wifi.txt.example`): `ssid=` / `password=` pairs, best first, optional `country=`. Imported at start, passwords are removed from the file afterwards.
 - **Saved networks in order** (NetworkManager autoconnect priority 100, 90, …): the box takes the first one in range. The setup network always stays last (priority −100) and cannot be deleted.
 - **Switching** warns first (the page loses the connection). If the new network does not come up within 30 s, the box goes back to the previous one.
@@ -110,6 +115,7 @@ Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/t
 | `POST /api/wifi/add`, `…/remove`, `…/order`, `…/connect` | manage networks, switch with fallback |
 | `GET/POST /api/wifi/ntfy`, `POST …/ntfy/test` | ntfy message with the address |
 | `GET /api/update`, `POST …/check`, `POST …/install` | software version, new commits, install (server restarts) |
+| `GET /api/setup`, `POST /api/setup/done` | setup assistant of the image |
 | `GET /api/display` | everything the OLED shows (radio, frequency, Wi-Fi, IP, version, update running) |
 | `WS /audio`, `WS /audio-tx` | RX / TX audio, 48 kHz, 16 bit, mono |
 
@@ -120,4 +126,4 @@ Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/t
 3. ~~Wi-Fi setup in the browser (no hotspot on the Pi): setup network, `wifi.txt`, ordered networks, fallback, ntfy~~ – test on the Zero 2 W pending
 4. HTTPS (browser microphone for TX), Opus audio for mobile use
 5. ~~Software update from the browser, version on page and OLED~~
-6. SD card image for the Zero 2 W
+6. ~~SD card image for the Zero 2 W (yaesu-remote-image), setup Wi-Fi, setup assistant~~

@@ -24,6 +24,7 @@
        ------------------------------------------------------------ */
 
     let toastTimer = null;
+    let hotspotSeen = false;   // setup Wi-Fi: "connect now" ticked once
 
     function toast(text, ok = false) {
         const el = $("toast");
@@ -101,7 +102,16 @@
                 return;
             }
 
-            if (status.switching) {
+            if (status.hotspot?.active && !hotspotSeen) {
+                hotspotSeen = true;
+                $("f-connect").checked = true;
+            }
+            if (status.hotspot?.active && !status.switching) {
+                banner(`You are in the box's own setup Wi-Fi <b>${esc(status.hotspot.ssid)}</b>. ` +
+                    "Add your home Wi-Fi below with <b>connect now</b> ticked. The box then joins it and this Wi-Fi disappears - " +
+                    `connect your phone to the home Wi-Fi again and open <b>${esc(where())}</b>.`);
+            }
+            else if (status.switching) {
                 banner(`Switching to <b>${esc(status.switching.to)}</b> …`);
             }
             else if (status.lastSwitch && status.lastSwitch.finishedAt !== shownSwitch) {

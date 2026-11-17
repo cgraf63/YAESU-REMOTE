@@ -291,7 +291,11 @@ def render(data, tick, shift=0):
 
     # --- Wi-Fi
     draw_wifi_icon(f, x0, 48)
-    if wifi.get("switching"):
+    if wifi.get("hotspot"):
+        # own setup Wi-Fi open: join it with the phone
+        f.text(fit("SETUP " + wifi["hotspot"], 112), x0 + 10, 48)
+        f.text(wifi.get("hotspotIp") or "10.42.0.1", x0 + 10, 57)
+    elif wifi.get("switching"):
         f.text(fit("> " + wifi["switching"], 110), x0 + 10, 48)
         f.text("SWITCHING" + dots, x0 + 10, 57)
     elif wifi.get("ip"):

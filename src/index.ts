@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { Router, sendJson, serveStatic } from "./http/server.js";
 import { displayRoutes } from "./routes/display.js";
 import { radioRoutes } from "./routes/radio.js";
+import { setupPending, setupRoutes } from "./routes/setup.js";
 import { updateRoutes } from "./routes/update.js";
 import { wifiRoutes } from "./routes/wifi.js";
 import { startAudioWebSocket } from "./services/audio/audio-ws.service.js";
@@ -17,6 +18,7 @@ import { WifiService } from "./services/wifi/wifi.service.js";
  *   /            remote page (adapts to the detected radio)
  *   /wifi.html   Wi-Fi setup (NetworkManager)
  *   /update.html software version and update (routes/update.ts)
+ *   /setup.html  setup assistant of the ready-made image (routes/setup.ts)
  *   /api/...     radio state and control (routes/radio.ts)
  *   /audio       RX audio WebSocket (48 kHz, 16 bit, mono)
  *   /audio-tx    TX audio WebSocket (browser microphone)
@@ -26,6 +28,7 @@ const wifi = new WifiService();
 
 const router = new Router();
 radioRoutes(router);
+setupRoutes(router);
 updateRoutes(router);
 wifiRoutes(router, wifi);
 displayRoutes(router, wifi);
@@ -33,6 +36,15 @@ displayRoutes(router, wifi);
 const server = http.createServer((req, res) => {
 
     const url = new URL(req.url ?? "/", "http://localhost");
+
+    // own setup Wi-Fi open: phones in it get the Wi-Fi page
+    if (wifi.captive(req, res, url)) return;
+
+    // ready-made image: the setup assistant first
+    if ((url.pathname === "/" || url.pathname === "/index.html") && setupPending()) {
+        res.writeHead(302, { Location: "/setup.html", "Cache-Control": "no-store" }).end();
+        return;
+    }
 
     void router.handle(req, res, url).then(handled => {
         if (handled) return;

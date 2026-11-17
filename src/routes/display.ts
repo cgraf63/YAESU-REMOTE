@@ -47,7 +47,9 @@ export function displayRoutes(router: Router, wifi: WifiService): void {
                 ip: w?.ip ?? "",
                 signal: w?.signal ?? 0,
                 switching: w?.switching?.to ?? "",
-                setupSsid: w?.setup.ssid ?? "YAESU-REMOTE"
+                setupSsid: w?.setup.ssid ?? "YAESU-REMOTE",
+                hotspot: w?.hotspot.active ? w.hotspot.ssid : "",
+                hotspotIp: w?.hotspot.ip ?? ""
             },
             hostname: w?.hostname ?? "",
             version: updateService.getVersion().version,
