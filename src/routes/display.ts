@@ -1,5 +1,6 @@
 import { Router, sendJson } from "../http/server.js";
 import { radioManager } from "../services/radio/radio-manager.js";
+import { updateService } from "../services/system/update.service.js";
 import type { WifiService } from "../services/wifi/wifi.service.js";
 
 /*
@@ -48,7 +49,9 @@ export function displayRoutes(router: Router, wifi: WifiService): void {
                 switching: w?.switching?.to ?? "",
                 setupSsid: w?.setup.ssid ?? "YAESU-REMOTE"
             },
-            hostname: w?.hostname ?? ""
+            hostname: w?.hostname ?? "",
+            version: updateService.getVersion().version,
+            updating: updateService.isRunning()
         });
 
     });

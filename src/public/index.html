@@ -71,6 +71,12 @@ button { cursor: pointer; }
 .navbtn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--key-line); background: var(--key); color: var(--text); text-decoration: none; font-weight: 800; font-size: 12px; letter-spacing: .08em; }
 .navbtn:hover { border-color: #4b5966; }
 
+/* software version; "UPDATE" when a new one is on GitHub */
+.navbtn.ver { border-color: transparent; background: none; color: var(--dim); font-weight: 600; font-variant-numeric: tabular-nums; padding: 7px 4px; }
+.navbtn.ver.new { border-color: var(--amber); color: var(--amber); font-weight: 800; padding: 7px 12px; }
+.appbar .navbtn { white-space: nowrap; }
+@media (max-width: 520px) { .appbar .clock, .appbar .link-dot span { display: none; } }
+
 .pwr {
     width: 34px; height: 34px;
     border-radius: 50%;
@@ -536,6 +542,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
     <span class="link-dot" id="link"><i></i><span id="link-text">CONNECTING</span></span>
     <div class="spacer"></div>
     <div class="clock" id="clock"></div>
+    <a class="navbtn ver" id="ver" href="/update.html" title="Software version - update">v…</a>
     <a class="navbtn" href="/wifi.html" title="Wi-Fi networks">WI-FI</a>
     <button class="pwr" id="pwr" type="button" title="Transceiver on / off">⏻</button>
 </header>
@@ -803,7 +810,7 @@ select.k { appearance: none; padding-right: 26px; background-image: linear-gradi
 
 <div class="toast" id="toast"></div>
 
-<script src="/js/remote.js"></script>
+<script src="/js/remote.js?v=2"></script>
 
 </body>
 </html>

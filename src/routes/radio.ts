@@ -1,5 +1,6 @@
 import { HttpError, Router, sendJson } from "../http/server.js";
 import { radioManager } from "../services/radio/radio-manager.js";
+import { updateService } from "../services/system/update.service.js";
 import type { YaesuRadio } from "../services/radio/radio.interface.js";
 import { YAESU_CTCSS, YAESU_DCS } from "../services/radio/yaesu-tables.js";
 
@@ -47,6 +48,8 @@ export function radioRoutes(router: Router): void {
         const r = radioManager.getRadio();
         sendJson(res, 200, {
             name: "YAESU-REMOTE",
+            version: updateService.getVersion(),
+            update: updateService.getBadge(),
             uptime: Math.round((Date.now() - started) / 1000),
             radio: radioManager.getStatus(),
             connected: r ? r.isConnected() : false

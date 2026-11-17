@@ -1,0 +1,21 @@
+# /etc/systemd/system/yaesu-remote-update@.service
+#
+# Software update as root, started by the server (user yaesu, polkit rule
+# 50-yaesu-remote.rules) from the UPDATE page:
+#
+#   yaesu-remote-update@check     git fetch
+#   yaesu-remote-update@install   new version: git, build, restart
+#
+# Not part of yaesu-remote.service: restarting the server does not stop it.
+
+[Unit]
+Description=YAESU-REMOTE software update (%i)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=YAESU_DIR=/opt/yaesu-remote
+Environment=YAESU_DATA=/var/lib/yaesu-remote
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+ExecStart=/bin/bash /opt/yaesu-remote/scripts/update.sh %i
+TimeoutStartSec=20min

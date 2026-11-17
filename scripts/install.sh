@@ -10,18 +10,22 @@
 #   cd YAESU-REMOTE
 #   sudo ./scripts/install.sh
 #
-# Running it again updates the installation (git pull first).
+# Running it again updates the installation (git pull first); the
+# options of the first run are kept (/etc/yaesu-remote/install.conf).
+# Later updates also from the browser: UPDATE page (scripts/update.sh).
 #
 # What it does:
 #   - packages: Node.js 22 (official build), alsa-utils, avahi, i2c-tools
 #   - user "yaesu" (groups dialout, audio, i2c), no login
-#   - code to /opt/yaesu-remote, build, data in /var/lib/yaesu-remote
+#   - code to /opt/yaesu-remote (git checkout, for updates), build,
+#     data in /var/lib/yaesu-remote
 #   - hostname yaesu-remote  ->  http://yaesu-remote.local
 #   - I2C on (OLED), Wi-Fi country if none is set
 #   - Pi Zero / Zero 2 W: USB at full speed (dwc_otg.speed=1) - the radio's
 #     internal USB hub otherwise drops out every minute or so
-#   - systemd: yaesu-remote (port 80), yaesu-remote-oled
-#   - polkit: user yaesu may manage Wi-Fi (no sudo)
+#   - systemd: yaesu-remote (port 80), yaesu-remote-oled,
+#     yaesu-remote-update@ (software update from the page)
+#   - polkit: user yaesu may manage Wi-Fi and start the update (no sudo)
 #   - setup network YAESU-REMOTE / yaesu-remote stored (lowest priority)
 #
 # Options:
@@ -31,6 +35,8 @@
 #   --no-oled         do not install the OLED service
 #   --port N          HTTP port (default 80)
 #   --no-usb-fullspeed  Pi Zero: keep USB at high speed
+#   --update          used by scripts/update.sh: build and restart in
+#                     /opt/yaesu-remote, packages only if missing
 #   --dry-run         only show what would be done
 
 set -euo pipefail
@@ -40,6 +46,7 @@ USER_NAME=yaesu
 TARGET=/opt/yaesu-remote
 DATA=/var/lib/yaesu-remote
 NODE_MAJOR=22
+CONF=/etc/yaesu-remote/install.conf
 
 HOSTNAME_NEW=yaesu-remote
 COUNTRY=CH
@@ -49,8 +56,15 @@ PORT=80
 DRY=0
 USB_FULLSPEED=1
 REBOOT=0
+UPDATE=0
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# options of the first run (hostname, port, OLED ...) - given options win
+if [ -r "$CONF" ]; then
+    # shellcheck disable=SC1090
+    . "$CONF"
+fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -61,7 +75,8 @@ while [ $# -gt 0 ]; do
         --port) PORT="$2"; shift 2 ;;
         --dry-run) DRY=1; shift ;;
         --no-usb-fullspeed) USB_FULLSPEED=0; shift ;;
-        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+        --update) UPDATE=1; shift ;;
+        -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -103,7 +118,8 @@ put() {
 [[ "$HOSTNAME_NEW" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || die "--hostname: lower case letters, digits and -"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "--port: number"
 
-echo "${BOLD}YAESU-REMOTE install${OFF}  (source: $SRC)"
+VERSION="$(grep -o '"version": *"[^"]*"' "$SRC/package.json" | grep -o '[0-9][0-9.]*' || true)"
+echo "${BOLD}YAESU-REMOTE $( [ "$UPDATE" = 1 ] && echo update || echo install )${OFF}  (source: $SRC, version ${VERSION:-?})"
 [ "$DRY" = 1 ] && echo "${YELLOW}dry run - nothing is changed${OFF}"
 
 # ---------------------------------------------------------------------
@@ -136,10 +152,19 @@ ok "CPU $ARCH"
 # ---------------------------------------------------------------------
 step "Packages"
 
-run apt-get update -qq
-run env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl ca-certificates xz-utils alsa-utils avahi-daemon i2c-tools python3 rsync polkitd > /dev/null
-ok "git, alsa-utils, avahi-daemon, i2c-tools, python3, rsync, polkitd"
+PACKAGES="git curl ca-certificates xz-utils alsa-utils avahi-daemon i2c-tools python3 rsync polkitd"
+# update: apt only if something is missing (saves minutes on the Zero)
+MISSING=0
+for p in $PACKAGES; do
+    dpkg -s "$p" > /dev/null 2>&1 || MISSING=1
+done
+if [ "$UPDATE" = 1 ] && [ "$MISSING" = 0 ]; then
+    ok "packages present"
+else
+    run apt-get update -qq
+    run env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $PACKAGES > /dev/null
+    ok "git, alsa-utils, avahi-daemon, i2c-tools, python3, rsync, polkitd"
+fi
 
 NODE_OK=0
 if command -v node > /dev/null; then
@@ -191,10 +216,21 @@ ok "groups dialout (CAT), audio (sound card), i2c (OLED)"
 step "Code -> $TARGET"
 
 run mkdir -p "$TARGET" "$DATA"
-run rsync -a --delete \
-    --exclude .git --exclude node_modules --exclude dist --exclude data --exclude .local-types \
-    --exclude '__pycache__' "$SRC/" "$TARGET/"
-ok "copied"
+if [ "$SRC" = "$TARGET" ]; then
+    # update.sh: the new code is already here (git reset)
+    ok "code in place ($(git -C "$TARGET" rev-parse --short HEAD 2> /dev/null || echo "no git"))"
+else
+    # with .git: the box updates itself later (UPDATE page)
+    run rsync -a --delete \
+        --exclude node_modules --exclude dist --exclude data --exclude .local-types \
+        --exclude '__pycache__' "$SRC/" "$TARGET/"
+    ok "copied"
+fi
+if [ -d "$SRC/.git" ]; then
+    ok "git checkout - updates from the UPDATE page"
+else
+    warn "no git checkout ($SRC) - the UPDATE page will not work; install from a git clone"
+fi
 
 # build as root in the target, dev tools removed afterwards
 if [ "$DRY" = 1 ]; then
@@ -292,7 +328,18 @@ ok "yaesu-remote.service (port $PORT)"
 
 run mkdir -p /etc/polkit-1/rules.d
 put /etc/polkit-1/rules.d/50-yaesu-remote.rules < "$SRC/system/50-yaesu-remote.rules"
-ok "polkit rule: $USER_NAME may manage Wi-Fi"
+ok "polkit rule: $USER_NAME may manage Wi-Fi and start the update"
+
+put /etc/systemd/system/yaesu-remote-update@.service < "$SRC/system/yaesu-remote-update@.service"
+ok "yaesu-remote-update@.service (software update)"
+
+# options for the next run / update
+run mkdir -p "$(dirname "$CONF")"
+printf '%s\n' \
+    "# YAESU-REMOTE install options (written by scripts/install.sh)" \
+    "HOSTNAME_NEW=$HOSTNAME_NEW" "COUNTRY=$COUNTRY" "OLED=$OLED" \
+    "OLED_DRIVER=$OLED_DRIVER" "PORT=$PORT" "USB_FULLSPEED=$USB_FULLSPEED" | put "$CONF"
+ok "options saved ($CONF)"
 
 if [ "$OLED" = 1 ]; then
     URL="http://127.0.0.1$( [ "$PORT" = 80 ] || echo ":$PORT")"
@@ -350,7 +397,7 @@ IP="$(hostname -I 2> /dev/null | awk '{print $1}')"
 P="$( [ "$PORT" = 80 ] || echo ":$PORT")"
 
 echo
-echo "${GREEN}${BOLD}YAESU-REMOTE is installed.${OFF}"
+echo "${GREEN}${BOLD}YAESU-REMOTE is $( [ "$UPDATE" = 1 ] && echo updated || echo installed ).${OFF}"
 echo "  Remote:  http://$HOSTNAME_NEW.local$P   ${IP:+or http://$IP$P}"
 echo "  Wi-Fi:   http://$HOSTNAME_NEW.local$P/wifi.html"
 echo "  Logs:    journalctl -u yaesu-remote -f"

@@ -250,6 +250,13 @@ def render(data, tick, shift=0):
         f.text(fit("NO CONNECTION", 100), x0, 48)
         return f
 
+    # --- software update running (the server restarts at the end)
+    if data.get("updating"):
+        f.text("UPDATE", x0, 19, 2)
+        f.text("INSTALLING" + dots, x0, 36)
+        f.text(fit("DO NOT SWITCH OFF", 108), x0, 48)
+        return f
+
     radio = data.get("radio", {})
     wifi = data.get("wifi", {})
 
@@ -304,8 +311,26 @@ def render(data, tick, shift=0):
     return f
 
 
-def render_message(lines):
+def render_version(version, updated):
+    """start screen: the software version (and after an update: UPDATED)"""
+    lines = ["VERSION", version or "?"]
+    if updated:
+        lines = ["UPDATED TO", version or "?"]
+    return render_message(lines, big=1)
+
+
+def render_message(lines, big=-1):
+    """big: index of a line drawn twice as large"""
     f = Frame()
+    if big >= 0:
+        y = 22
+        for i, line in enumerate(lines):
+            scale = 2 if i == big else 1
+            text = fit(line, 124, scale)
+            f.text(text, (WIDTH - text_width(text, scale)) // 2, y, scale)
+            y += 18 if scale == 2 else 12
+        f.text("YAESU-REMOTE", (WIDTH - text_width("YAESU-REMOTE", 2)) // 2, 1, 2)
+        return f
     f.text("YAESU-REMOTE", (WIDTH - text_width("YAESU-REMOTE", 2)) // 2, 1, 2)
     for i, line in enumerate(lines):
         f.text(fit(line, 124), (WIDTH - text_width(fit(line, 124))) // 2, 26 + i * 12)
@@ -396,6 +421,8 @@ def save_png(frame, path, scale=4):
 # ======================================================================
 
 DEMO = {
+    "version": "0.2.0",
+    "updating": False,
     "radio": {"state": "connected", "model": "FTX-1", "alive": True, "frequency": 14074000, "mode": "DATA-U", "tx": False, "split": False},
     "wifi": {"available": True, "ssid": "HB9OM-Home", "ip": "192.168.1.23", "signal": 78, "switching": "", "setupSsid": "YAESU-REMOTE"},
 }
@@ -419,11 +446,17 @@ def main():
     ap.add_argument("--flip", action="store_true", default=os.environ.get("OLED_FLIP") == "1", help="rotate 180 degrees")
     ap.add_argument("--png", help="write one frame as PNG and exit")
     ap.add_argument("--demo", action="store_true", help="demo data instead of the server")
+    ap.add_argument("--screen", choices=["main", "version", "updated", "updating"], default="main",
+                    help="with --png: which screen")
     args = ap.parse_args()
 
     if args.png:
         data = DEMO if args.demo else fetch(args.url)
-        save_png(render(data, 0), args.png)
+        if args.screen in ("version", "updated"):
+            frame = render_version((data or {}).get("version", ""), args.screen == "updated")
+        else:
+            frame = render(dict(data or {}, updating=True) if args.screen == "updating" else data, 0)
+        save_png(frame, args.png)
         print(args.png)
         return
 
@@ -441,6 +474,11 @@ def main():
     data = None
     last_fetch = 0.0
     last_error = ""
+    # version screen for 3 s: at the start and when the version changes
+    # (after an update the server comes back with the new one)
+    shown_version = ""
+    splash_until = 0.0
+    splash = None
 
     while running:
 
@@ -461,12 +499,17 @@ def main():
         if now - last_fetch >= 1.0:
             data = DEMO if args.demo else fetch(args.url)
             last_fetch = now
+            version = (data or {}).get("version", "")
+            if version and version != shown_version:
+                splash = render_version(version, bool(shown_version))
+                splash_until = now + 3
+                shown_version = version
 
         # one pixel to the side every 5 minutes against burn-in
         shift = int(now // 300) % 2
 
         try:
-            oled.show(render(data, tick, shift))
+            oled.show(splash if splash and now < splash_until else render(data, tick, shift))
         except OSError as error:
             print(f"OLED: write failed ({error}) - reconnecting", flush=True)
             oled.close()

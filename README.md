@@ -26,7 +26,7 @@ sudo ./scripts/install.sh            # options: --oled-driver sh1106, --no-oled,
 sudo reboot
 ```
 
-The script installs Node.js 22, creates the user `yaesu`, builds into `/opt/yaesu-remote`, sets the hostname `yaesu-remote`, turns on I2C and installs the services (`yaesu-remote` on port 80, `yaesu-remote-oled`) and the polkit rule. Running it again after `git pull` updates the box.
+The script installs Node.js 22, creates the user `yaesu`, puts the code as a git checkout into `/opt/yaesu-remote` and builds it there, sets the hostname `yaesu-remote`, turns on I2C and installs the services (`yaesu-remote` on port 80, `yaesu-remote-oled`, `yaesu-remote-update@`) and the polkit rule. The options of the first run are kept in `/etc/yaesu-remote/install.conf`. Later updates: from the browser (below), or `git pull` and the script again.
 
 Radio: USB cable to the Pi's **USB** port (not PWR) – on the Zero 2 W with a micro-USB OTG adapter or cable.
 
@@ -69,11 +69,20 @@ The box joins the home router or the phone hotspot. Setup in the browser: **WI-F
 
 On the Pi: `system/yaesu-remote.service` (systemd, user `yaesu`, imports `wifi.txt` as root before the start) and `system/50-yaesu-remote.rules` (polkit: user `yaesu` may manage NetworkManager, no sudo).
 
+## Software update
+
+The version is shown at the top of the remote page (`v0.2.0`); when a newer one is on GitHub it turns into a yellow **UPDATE 0.2.1** button. The **UPDATE** page (`/update.html`) shows the installed version, the new changes and the log of the last update.
+
+- **Check:** the box asks GitHub (`git fetch`, the branch it was installed from) 3 minutes after the start and then every 12 hours, or with **CHECK NOW**. Only the changes are downloaded.
+- **Install:** about a minute – new code (`git reset` to the branch on GitHub), build, restart. The OLED shows **UPDATE**, then the new version. If the new version does not build, the box goes back to the old one. Not possible while the radio transmits.
+- **How:** the server (user `yaesu`) only reads the checkout; fetching and installing run as root in `yaesu-remote-update@check` / `@install` (`scripts/update.sh`), which the polkit rule lets it start – nothing else. By hand: `sudo systemctl start yaesu-remote-update@install`, log in `/var/lib/yaesu-remote/update.log`.
+- **Version number:** `version` in `package.json` plus the commits after it – `0.2.0` + 3 commits = `0.2.3`. A new `version` (e.g. `0.3.0`) starts counting again.
+
 ## OLED status display (optional)
 
-A 0.96" I2C OLED (SSD1306, 128 × 64; 1.3" SH1106 works too) shows the radio with frequency and mode (model inverted while transmitting), the Wi-Fi network with signal, the IP address and a turning logo – as long as it turns, the Pi is running. Without Wi-Fi it shows the setup hotspot name.
+A 0.96" I2C OLED (SSD1306, 128 × 64; 1.3" SH1106 works too) shows the software version for 3 s at the start (and “UPDATED TO …” after an update), then the radio with frequency and mode (model inverted while transmitting), the Wi-Fi network with signal, the IP address and a turning logo – as long as it turns, the Pi is running. Without Wi-Fi it shows the setup hotspot name.
 
-Wiring: VCC → pin 1 (3.3 V), GND → pin 6, SDA → pin 3, SCL → pin 5. `oled/yaesu_oled.py` uses the Python standard library only (I2C directly via `/dev/i2c-1`); service: `system/yaesu-remote-oled.service`. Preview without a display: `python3 oled/yaesu_oled.py --demo --png preview.png`.
+Wiring: VCC → pin 1 (3.3 V), GND → pin 6, SDA → pin 3, SCL → pin 5. `oled/yaesu_oled.py` uses the Python standard library only (I2C directly via `/dev/i2c-1`); service: `system/yaesu-remote-oled.service`. Preview without a display: `python3 oled/yaesu_oled.py --demo --png preview.png` (`--screen version|updated|updating` for the other screens).
 
 ## Test without a radio
 
@@ -100,7 +109,8 @@ Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/t
 | `GET /api/wifi`, `…/saved`, `…/scan` | Wi-Fi status, saved networks, networks in range |
 | `POST /api/wifi/add`, `…/remove`, `…/order`, `…/connect` | manage networks, switch with fallback |
 | `GET/POST /api/wifi/ntfy`, `POST …/ntfy/test` | ntfy message with the address |
-| `GET /api/display` | everything the OLED shows (radio, frequency, Wi-Fi, IP) |
+| `GET /api/update`, `POST …/check`, `POST …/install` | software version, new commits, install (server restarts) |
+| `GET /api/display` | everything the OLED shows (radio, frequency, Wi-Fi, IP, version, update running) |
 | `WS /audio`, `WS /audio-tx` | RX / TX audio, 48 kHz, 16 bit, mono |
 
 ## Roadmap
@@ -109,4 +119,5 @@ Wi-Fi page without NetworkManager: `NMCLI=tools/sim/fake_nmcli.py` (state in `/t
 2. FT-710 driver (CAT manual + Hamlib)
 3. ~~Wi-Fi setup in the browser (no hotspot on the Pi): setup network, `wifi.txt`, ordered networks, fallback, ntfy~~ – test on the Zero 2 W pending
 4. HTTPS (browser microphone for TX), Opus audio for mobile use
-5. SD card image for the Zero 2 W
+5. ~~Software update from the browser, version on page and OLED~~
+6. SD card image for the Zero 2 W

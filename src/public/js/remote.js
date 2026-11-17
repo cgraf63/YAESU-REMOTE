@@ -1083,6 +1083,26 @@
 
     setInterval(poll, 500);
     setInterval(clock, 1000);
+
+    /* software version in the top bar; marked when an update is waiting */
+    async function version() {
+        try {
+            const s = await (await fetch("/api/status", { cache: "no-store" })).json();
+            const v = s.version?.version || "";
+            const update = s.update || {};
+            const el = document.getElementById("ver");
+            el.classList.toggle("new", update.behind > 0);
+            el.textContent = update.behind > 0 ? `UPDATE ${update.latest || ""}`.trim() : (v ? `v${v}` : "v?");
+            el.title = update.behind > 0
+                ? `Installed: ${v} - new on GitHub: ${update.latest || `${update.behind} changes`}`
+                : `Software version ${v}${s.version?.commit ? ` (${s.version.commit})` : ""}`;
+        }
+        catch {
+            // server restarting
+        }
+    }
+    void version();
+    setInterval(version, 60_000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) void poll(); });
 
 })();

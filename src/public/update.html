@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0d10">
+    <title>Update · YAESU-REMOTE</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/box.css">
+
+    <style>
+.ver { font-size: 40px; font-weight: 800; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.tag.new { background: var(--amber); }
+.tag.ok { background: var(--ok); }
+.commit { display: grid; grid-template-columns: 70px 70px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 8px 12px; margin-bottom: 6px; border: 1px solid var(--key-line); border-radius: 10px; background: #12171c; font-size: 13px; }
+.commit .v { font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; }
+.commit code { color: var(--dim); }
+.commit .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit .d { color: var(--dim); white-space: nowrap; }
+.btnrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+pre.log { margin: 10px 0 0; padding: 12px; max-height: 340px; overflow: auto; border-radius: 10px; background: #000; border: 1px solid #20262c; color: #b9c4cc; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+@media (max-width: 640px) {
+    .ver { font-size: 30px; }
+    .commit { grid-template-columns: 60px minmax(0, 1fr); }
+    .commit code, .commit .d { display: none; }
+}
+    </style>
+
+</head>
+
+<body>
+
+<header class="appbar">
+    <div class="title">YAESU-REMOTE <small>UPDATE</small></div>
+    <span class="link-dot" id="link"><i></i><span id="link-text">…</span></span>
+    <div class="spacer"></div>
+    <a class="navbtn" href="/wifi.html">WI-FI</a>
+    <a class="navbtn" href="/">◀ REMOTE</a>
+</header>
+
+<main class="rig">
+
+    <section class="bezel">
+        <div class="screen">
+            <div class="tag off" id="u-tag">VERSION</div>
+            <div class="ver" id="u-ver">—</div>
+            <div class="facts" id="u-facts"></div>
+        </div>
+        <div class="banner" id="banner" hidden></div>
+    </section>
+
+    <section class="panel">
+        <h2>NEW ON GITHUB <span class="spacer"></span><button class="k" id="check" type="button">CHECK NOW</button></h2>
+        <div id="commits"><p class="hint">…</p></div>
+        <div class="btnrow" style="margin-top:12px">
+            <button class="k go" id="install" type="button" disabled>INSTALL UPDATE</button>
+            <span class="hint" id="install-hint" style="margin:0"></span>
+        </div>
+    </section>
+
+    <section class="panel" id="log-panel" hidden>
+        <h2>LAST UPDATE <span class="spacer"></span><span id="log-when" style="letter-spacing:.02em;font-weight:600"></span></h2>
+        <pre class="log" id="log"></pre>
+    </section>
+
+    <section class="panel">
+        <h2>HOW IT WORKS</h2>
+        <div class="cols">
+            <p class="hint">The box checks GitHub a few minutes after the start and then every 12 hours; <b>CHECK NOW</b> asks at once. Only what changed is downloaded - a phone hotspot is fine.</p>
+            <p class="hint"><b>INSTALL UPDATE</b> takes about a minute: new code, build, restart. The remote page is gone for that time and comes back by itself; the OLED shows <b>UPDATE</b>. If the new version does not build, the box goes back to the old one. Not while the radio is transmitting.</p>
+        </div>
+    </section>
+
+</main>
+
+<div class="modal" id="modal">
+    <div class="box">
+        <h3>Install the update?</h3>
+        <div id="m-text"></div>
+        <div class="btns">
+            <button class="k" id="m-cancel" type="button">CANCEL</button>
+            <button class="k go" id="m-ok" type="button">INSTALL</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/update.js"></script>
+
+</body>
+</html>

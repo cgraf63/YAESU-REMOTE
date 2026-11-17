@@ -4,9 +4,11 @@ import { config } from "./config.js";
 import { Router, sendJson, serveStatic } from "./http/server.js";
 import { displayRoutes } from "./routes/display.js";
 import { radioRoutes } from "./routes/radio.js";
+import { updateRoutes } from "./routes/update.js";
 import { wifiRoutes } from "./routes/wifi.js";
 import { startAudioWebSocket } from "./services/audio/audio-ws.service.js";
 import { radioManager } from "./services/radio/radio-manager.js";
+import { updateService } from "./services/system/update.service.js";
 import { WifiService } from "./services/wifi/wifi.service.js";
 
 /*
@@ -14,6 +16,7 @@ import { WifiService } from "./services/wifi/wifi.service.js";
  *
  *   /            remote page (adapts to the detected radio)
  *   /wifi.html   Wi-Fi setup (NetworkManager)
+ *   /update.html software version and update (routes/update.ts)
  *   /api/...     radio state and control (routes/radio.ts)
  *   /audio       RX audio WebSocket (48 kHz, 16 bit, mono)
  *   /audio-tx    TX audio WebSocket (browser microphone)
@@ -23,6 +26,7 @@ const wifi = new WifiService();
 
 const router = new Router();
 radioRoutes(router);
+updateRoutes(router);
 wifiRoutes(router, wifi);
 displayRoutes(router, wifi);
 
@@ -48,6 +52,7 @@ startAudioWebSocket(server);
 server.listen(config.http.port, config.http.host, () => {
     console.log(`YAESU-REMOTE listening on http://${config.http.host}:${config.http.port}`);
     radioManager.start();
+    void updateService.start();
     void wifi.start();
 });
 
@@ -60,6 +65,7 @@ function shutdown(signal: string): void {
     catch { /* not connected */ }
     setTimeout(() => {
         radioManager.stop();
+        updateService.stop();
         wifi.stop();
         server.close();
         process.exit(0);
