@@ -35,8 +35,13 @@ TEXT = {
             "<b>USB-Kabel</b> vom Transceiver zum Pi – am Zero 2 W mit <b>Micro-USB-OTG</b>-Kabel oder -Adapter",
             "das Image <b>yaesu-remote-x.y.z-arm64.img.xz</b>",
             "ein <b>Handy</b> für die WLAN-Einrichtung",
-            "optional: OLED 0,96\" (SSD1306, I2C) für Frequenz und IP-Adresse",
         ],
+        "oled_title": "OLED anschliessen (optional)",
+        "oled_side": "SD-Karte",
+        "oled_rows": [("VCC", "Pin 1", "3,3 V"), ("SDA", "Pin 3", "GPIO 2"),
+                      ("SCL", "Pin 5", "GPIO 3"), ("GND", "Pin 6", "Masse")],
+        "oled_note": "0,96\" SSD1306, I2C. Nur bei ausgeschaltetem Pi anschliessen; Beschriftung am "
+                     "Modul beachten (oft GND, VCC, SCL, SDA).",
         "steps": [
             ("Karte schreiben",
              "<b>Raspberry Pi Imager</b> öffnen → Modell wählen → Betriebssystem: "
@@ -87,8 +92,13 @@ TEXT = {
             "<b>USB cable</b> from the transceiver to the Pi – on the Zero 2 W with a <b>micro-USB OTG</b> cable or adapter",
             "the image <b>yaesu-remote-x.y.z-arm64.img.xz</b>",
             "a <b>phone</b> for the Wi-Fi setup",
-            "optional: 0.96\" OLED (SSD1306, I2C) for frequency and IP address",
         ],
+        "oled_title": "Connect the OLED (optional)",
+        "oled_side": "SD card",
+        "oled_rows": [("VCC", "pin 1", "3.3 V"), ("SDA", "pin 3", "GPIO 2"),
+                      ("SCL", "pin 5", "GPIO 3"), ("GND", "pin 6", "ground")],
+        "oled_note": "0.96\" SSD1306, I2C. Connect only with the Pi switched off; mind the labels "
+                     "on the module (often GND, VCC, SCL, SDA).",
         "steps": [
             ("Write the card",
              "Open the <b>Raspberry Pi Imager</b> → choose the model → operating system: "
@@ -150,11 +160,18 @@ body { margin: 0; width: 210mm; height: 297mm; position: relative; overflow: hid
 .step p { margin: 0; font-size: 9pt; line-height: 1.45; }
 .url { display: block; margin: 1.6mm 0; padding: 1.8mm 3.5mm; border-radius: 2mm; background: #0b0d10;
        color: #2aa8ff; font-weight: 700; font-size: 12pt; letter-spacing: .2px; }
-.side { display: grid; gap: 5mm; align-content: start; }
+.side { display: grid; gap: 4mm; align-content: start; }
 .box { background: #f1f5f9; border: 1px solid #d3dde6; border-radius: 3mm; padding: 4mm 4.5mm; }
 .box h3 { margin: 0 0 2.5mm; font-size: 10.5pt; color: #155f94; text-transform: uppercase; letter-spacing: 1px; }
 .box ul { margin: 0; padding-left: 4mm; font-size: 8.6pt; line-height: 1.45; }
-.box li { margin-bottom: 1.6mm; }
+.box li { margin-bottom: 1.2mm; }
+.oled svg { display: block; width: 100%; height: auto; margin: 0 0 2mm; }
+.oled table { width: 100%; border-collapse: collapse; font-size: 8.2pt; margin-bottom: 1.5mm; }
+.oled td { padding: .35mm 1mm; border-bottom: 1px solid rgba(0,0,0,.08); white-space: nowrap; }
+.oled td:first-child { font-weight: 800; width: 15mm; }
+.oled td:last-child { color: #5d6b78; }
+.oled .dot { display: inline-block; width: 2.4mm; height: 2.4mm; border-radius: 50%; margin-right: 1.2mm; vertical-align: -0.2mm; }
+.oled p { margin: 0; font-size: 7.8pt; line-height: 1.4; color: #3a4652; }
 .help { margin: 5mm 14mm 0; border-top: 2px solid #1f7fc4; padding-top: 4mm; }
 .help h3 { margin: 0 0 3mm; font-size: 11pt; color: #155f94; }
 .help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm 8mm; font-size: 8.3pt; line-height: 1.4; }
@@ -165,6 +182,40 @@ body { margin: 0; width: 210mm; height: 297mm; position: relative; overflow: hid
 """
 
 
+PIN_COLOURS = {"VCC": "#d4372c", "SDA": "#2f7fd8", "SCL": "#e0a800", "GND": "#1c2530"}
+
+
+def oled_box(t: dict) -> str:
+    """the first six pins of the Pi header (top view, pin 1 at the SD card end) and the table"""
+
+    used = {1: "VCC", 3: "SDA", 5: "SCL", 6: "GND"}
+    pins = []
+    for n in range(1, 7):
+        col = (n - 1) // 2
+        x = 62 + col * 22
+        y = 30 if n % 2 else 10           # odd pins: inner row, even pins: board edge
+        sig = used.get(n)
+        fill = PIN_COLOURS[sig] if sig else "#c3c9cf"
+        pins.append(f"<rect x='{x - 7}' y='{y - 7}' width='14' height='14' rx='2' fill='{fill}'/>"
+                    f"<text x='{x}' y='{y + 3.5}' font-size='9' font-weight='700' text-anchor='middle' "
+                    f"fill='#fff'>{n}</text>")
+        if sig:
+            ly = 52 if n % 2 else -4
+            pins.append(f"<text x='{x}' y='{ly + 2}' font-size='8' font-weight='800' text-anchor='middle' "
+                        f"fill='{fill}'>{sig}</text>")
+    svg = (f"<svg viewBox='0 -12 140 68' xmlns='http://www.w3.org/2000/svg'>"
+           f"<rect x='48' y='-1' width='92' height='42' rx='3' fill='#e9edf1' stroke='#c3c9cf'/>"
+           f"<text x='0' y='23' font-size='8' fill='#5d6b78'>◀ {html.escape(t['oled_side'])}</text>"
+           f"<text x='122' y='23' font-size='8' fill='#8a96a2'>· · ·</text>"
+           + "".join(pins) + "</svg>")
+    rows = "".join(
+        f"<tr><td><span class='dot' style='background:{PIN_COLOURS[sig]}'></span>{sig}</td>"
+        f"<td>{html.escape(pin)}</td><td>{html.escape(what)}</td></tr>"
+        for sig, pin, what in t["oled_rows"])
+    return (f"<div class='box oled'><h3>{html.escape(t['oled_title'])}</h3>{svg}"
+            f"<table>{rows}</table><p>{html.escape(t['oled_note'])}</p></div>")
+
+
 def page_html(lang: str, logo: str, version: str) -> str:
 
     t = TEXT[lang]
@@ -173,6 +224,7 @@ def page_html(lang: str, logo: str, version: str) -> str:
         f"<div class='step'><div class='num'>{i}</div><div><h2>{html.escape(title)}</h2><p>{body}</p></div></div>"
         for i, (title, body) in enumerate(t["steps"], 1))
     need = "".join(f"<li>{item}</li>" for item in t["need"])
+    oled = oled_box(t)
     help_items = "".join(f"<div><b class='t'>{html.escape(title)}</b>{body}</div>" for title, body in t["help"])
 
     return f"""<!DOCTYPE html><html lang="{lang}"><head><meta charset="utf-8"><style>{CSS}</style></head><body>
@@ -182,7 +234,7 @@ def page_html(lang: str, logo: str, version: str) -> str:
 </div>
 <div class="main">
   <div class="steps">{steps}</div>
-  <div class="side"><div class="box"><h3>{html.escape(t['need_title'])}</h3><ul>{need}</ul></div></div>
+  <div class="side"><div class="box"><h3>{html.escape(t['need_title'])}</h3><ul>{need}</ul></div>{oled}</div>
 </div>
 <div class="help"><h3>{html.escape(t['help_title'])}</h3><div class="help-grid">{help_items}</div></div>
 <div class="foot">

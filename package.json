@@ -1,6 +1,6 @@
 {
   "name": "yaesu-remote",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Browser remote for Yaesu FTX-1, FTDX10 and FT-710 on a Raspberry Pi Zero 2 W",
   "private": true,
   "type": "module",
