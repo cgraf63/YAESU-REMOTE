@@ -24,7 +24,7 @@ Raspberry Pi OS Lite (Bookworm or newer, 32 or 64 bit) on a Zero 2 W, 3, 4 or 5.
 
 ```sh
 sudo apt install -y git
-git clone -b feature/server-core https://github.com/cgraf63/YAESU-REMOTE.git
+git clone https://github.com/cgraf63/YAESU-REMOTE.git
 cd YAESU-REMOTE
 sudo ./scripts/install.sh            # options: --setup-hotspot, --oled-driver sh1106, --no-oled, --port 8080, --dry-run
 sudo reboot
@@ -82,7 +82,7 @@ On the Pi: `system/yaesu-remote.service` (systemd, user `yaesu`, imports `wifi.t
 
 The version is shown at the top of the remote page (`v0.2.0`); when a newer one is on GitHub it turns into a yellow **UPDATE 0.2.1** button. The **UPDATE** page (`/update.html`) shows the installed version, the new changes and the log of the last update.
 
-- **Check:** the box asks GitHub (`git fetch`, the branch it was installed from) 3 minutes after the start and then every 12 hours, or with **CHECK NOW**. Only the changes are downloaded.
+- **Check:** the box asks GitHub (`git fetch`, the branch it was installed from - `main`) 3 minutes after the start and then every 12 hours, or with **CHECK NOW**. Only the changes are downloaded.
 - **Install:** about a minute – new code (`git reset` to the branch on GitHub), build, restart. The OLED shows **UPDATE**, then the new version. If the new version does not build, the box goes back to the old one. Not possible while the radio transmits.
 - **How:** the server (user `yaesu`) only reads the checkout; fetching and installing run as root in `yaesu-remote-update@check` / `@install` (`scripts/update.sh`), which the polkit rule lets it start – nothing else. By hand: `sudo systemctl start yaesu-remote-update@install`, log in `/var/lib/yaesu-remote/update.log`.
 - **Version number:** `version` in `package.json` plus the commits after it – `0.2.0` + 3 commits = `0.2.3`. A new `version` (e.g. `0.3.0`) starts counting again.

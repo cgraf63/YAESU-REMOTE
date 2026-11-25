@@ -6,7 +6,7 @@
 # Run from a checkout of the repository:
 #
 #   sudo apt install -y git
-#   git clone -b feature/server-core https://github.com/cgraf63/YAESU-REMOTE.git
+#   git clone https://github.com/cgraf63/YAESU-REMOTE.git
 #   cd YAESU-REMOTE
 #   sudo ./scripts/install.sh
 #
